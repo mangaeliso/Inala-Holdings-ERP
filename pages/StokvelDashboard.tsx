@@ -1,15 +1,17 @@
+
 import React, { useState } from 'react';
 import { MOCK_TENANTS, MOCK_STOKVEL_MEMBERS, MOCK_CONTRIBUTIONS, MOCK_LOANS, MOCK_PAYOUTS } from '../services/mockData';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { ContributionStatus, LoanStatus } from '../types';
+import { Modal } from '../components/ui/Modal';
+import { ContributionStatus, LoanStatus, StokvelMember } from '../types';
 import { 
   ArrowLeft, Users, Wallet, Calendar, Plus, Search, 
-  CheckCircle2, AlertCircle, Banknote, CreditCard, 
+  CheckCircle2, AlertCircle, CreditCard, 
   Clock, TrendingUp, ChevronRight, Trophy, Sparkles,
-  ArrowUpRight, ArrowDownRight, Activity
+  ArrowUpRight, ArrowDownRight, Activity, Edit, Trash2, Mail, UserPlus, Save, Target
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
+import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface StokvelDashboardProps {
   tenantId: string;
@@ -21,11 +23,21 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
   const [memberSearch, setMemberSearch] = useState('');
   const [isProcessingPayout, setIsProcessingPayout] = useState(false);
 
+  // Local State for Members to allow CRUD
+  const [members, setMembers] = useState<StokvelMember[]>(
+      MOCK_STOKVEL_MEMBERS.filter(m => m.tenantId === tenantId)
+  );
+
+  // Modals
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<StokvelMember | null>(null);
+  const [formData, setFormData] = useState<Partial<StokvelMember>>({});
+  const [inviteEmail, setInviteEmail] = useState('');
+
   const tenant = MOCK_TENANTS.find(t => t.id === tenantId);
-  const members = MOCK_STOKVEL_MEMBERS.filter(m => m.tenantId === tenantId);
   const contributions = MOCK_CONTRIBUTIONS.filter(c => c.tenantId === tenantId);
   const loans = MOCK_LOANS.filter(l => l.tenantId === tenantId);
-  const payouts = MOCK_PAYOUTS.filter(p => p.tenantId === tenantId);
 
   // Stats
   const totalPool = members.reduce((sum, m) => sum + m.totalContributed, 0);
@@ -34,8 +46,65 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
   const totalCollectedThisMonth = currentMonthContributions.reduce((sum, c) => sum + c.amount, 0);
   const expectedCollection = members.reduce((sum, m) => sum + m.monthlyPledge, 0);
   const collectionRate = expectedCollection > 0 ? (totalCollectedThisMonth / expectedCollection) * 100 : 0;
+  
+  // Target Calculation
+  const targetAmount = tenant?.target || 100000;
+  const targetProgress = Math.min(100, (totalPool / targetAmount) * 100);
 
   if (!tenant) return <div>Tenant not found</div>;
+
+  // --- CRUD Handlers ---
+
+  const handleOpenAddMember = () => {
+      setSelectedMember(null);
+      setFormData({
+          name: '',
+          phone: '',
+          email: '',
+          monthlyPledge: 0,
+          status: 'ACTIVE',
+          joinDate: new Date().toISOString().split('T')[0]
+      });
+      setShowMemberModal(true);
+  };
+
+  const handleOpenEditMember = (member: StokvelMember) => {
+      setSelectedMember(member);
+      setFormData({ ...member });
+      setShowMemberModal(true);
+  };
+
+  const handleSaveMember = () => {
+      if (selectedMember) {
+          // Edit Mode
+          setMembers(prev => prev.map(m => m.id === selectedMember.id ? { ...m, ...formData } as StokvelMember : m));
+      } else {
+          // Add Mode
+          const newMember: StokvelMember = {
+              id: `sm_${Date.now()}`,
+              tenantId: tenantId,
+              totalContributed: 0,
+              payoutQueuePosition: members.length + 1,
+              avatarUrl: `https://ui-avatars.com/api/?name=${formData.name}&background=random`,
+              ...formData as any
+          };
+          setMembers(prev => [...prev, newMember]);
+      }
+      setShowMemberModal(false);
+  };
+
+  const handleDeleteMember = (memberId: string) => {
+      if (confirm('Are you sure you want to remove this member? This action cannot be undone.')) {
+          setMembers(prev => prev.filter(m => m.id !== memberId));
+      }
+  };
+
+  const handleSendInvite = () => {
+      if (!inviteEmail) return;
+      alert(`Invitation sent to ${inviteEmail}`);
+      setShowInviteModal(false);
+      setInviteEmail('');
+  };
 
   const handleProcessPayout = () => {
       setIsProcessingPayout(true);
@@ -45,26 +114,7 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
       }, 2000);
   };
 
-  // --- Sub-Components for Next-Gen UI ---
-
-  const StatBadge = ({ icon: Icon, label, value, trend, trendUp }: any) => (
-    <div className="flex items-center gap-3 p-3 rounded-xl bg-white/50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 backdrop-blur-sm">
-      <div className="p-2 bg-white dark:bg-slate-900 rounded-lg shadow-sm text-indigo-600 dark:text-indigo-400">
-        <Icon size={18} />
-      </div>
-      <div>
-        <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{label}</p>
-        <div className="flex items-end gap-2">
-          <span className="font-bold text-slate-900 dark:text-white">{value}</span>
-          {trend && (
-             <span className={`text-[10px] font-bold flex items-center ${trendUp ? 'text-emerald-500' : 'text-rose-500'}`}>
-               {trendUp ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />} {trend}
-             </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  // --- Sub-Components ---
 
   const renderOverview = () => {
     // Payout Queue Logic
@@ -97,7 +147,24 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
                           </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-4 mt-8">
+                      {/* Target Progress Bar inside Hero */}
+                      <div className="mt-8 mb-2">
+                           <div className="flex justify-between items-end mb-2">
+                               <div className="flex items-center gap-2 text-indigo-200 text-sm font-medium">
+                                   <Target size={16} />
+                                   <span>Fund Goal: {tenant.currency} {targetAmount.toLocaleString()}</span>
+                               </div>
+                               <span className="text-2xl font-bold text-white">{targetProgress.toFixed(1)}%</span>
+                           </div>
+                           <div className="w-full h-2.5 bg-slate-800/50 rounded-full overflow-hidden border border-white/5">
+                               <div 
+                                   className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-1000 ease-out" 
+                                   style={{ width: `${targetProgress}%` }}
+                               ></div>
+                           </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/10">
                           <div>
                               <p className="text-indigo-300 text-xs mb-1">Monthly Target</p>
                               <p className="font-semibold text-lg">{tenant.currency} {expectedCollection.toLocaleString()}</p>
@@ -250,9 +317,14 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
                         className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
                     />
                 </div>
-                <Button>
-                    <Plus size={18} className="mr-2" /> Invite Member
-                </Button>
+                <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setShowInviteModal(true)} className="bg-white dark:bg-slate-800">
+                        <Mail size={18} className="mr-2" /> Invite Member
+                    </Button>
+                    <Button onClick={handleOpenAddMember}>
+                        <UserPlus size={18} className="mr-2" /> Add Member
+                    </Button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -272,21 +344,40 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
                                <div>
                                    <h4 className="font-bold text-lg text-slate-900 dark:text-white">{member.name}</h4>
                                    <p className="text-sm text-slate-500">{member.phone}</p>
+                                   <p className="text-xs text-slate-400 truncate max-w-[150px]">{member.email}</p>
                                </div>
                            </div>
-                           <div className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-xs font-bold text-slate-600 dark:text-slate-400">
-                               #{member.payoutQueuePosition}
+                           <div className="flex flex-col gap-2 items-end">
+                               <div className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-xs font-bold text-slate-600 dark:text-slate-400">
+                                   #{member.payoutQueuePosition}
+                               </div>
+                               <div className="flex gap-1">
+                                   <button 
+                                      onClick={() => handleOpenEditMember(member)}
+                                      className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                                      title="Edit Profile"
+                                   >
+                                       <Edit size={16} />
+                                   </button>
+                                   <button 
+                                      onClick={() => handleDeleteMember(member.id)}
+                                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                      title="Delete Member"
+                                   >
+                                       <Trash2 size={16} />
+                                   </button>
+                               </div>
                            </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-slate-100 dark:border-slate-800 mb-4">
                             <div>
                                 <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Pledge</p>
-                                <p className="font-bold text-slate-700 dark:text-slate-200">{tenant.currency} {member.monthlyPledge}</p>
+                                <p className="font-bold text-slate-700 dark:text-slate-200">{tenant.currency} {member.monthlyPledge.toLocaleString()}</p>
                             </div>
                             <div>
                                 <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Total Saved</p>
-                                <p className="font-bold text-indigo-600 dark:text-indigo-400">{tenant.currency} {member.totalContributed}</p>
+                                <p className="font-bold text-indigo-600 dark:text-indigo-400">{tenant.currency} {member.totalContributed.toLocaleString()}</p>
                             </div>
                         </div>
 
@@ -302,7 +393,7 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
                         </div>
 
                         <div className="flex gap-3">
-                            <button className="flex-1 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-300 transition-colors">
+                            <button onClick={() => handleOpenEditMember(member)} className="flex-1 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-300 transition-colors">
                                 View Profile
                             </button>
                             <button className="flex-1 py-2 rounded-lg bg-indigo-600 text-sm font-medium text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-colors">
@@ -617,6 +708,115 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
            {activeTab === 'PAYOUTS' && renderPayouts()}
            {activeTab === 'LOANS' && renderLoans()}
        </div>
+
+       {/* Member Add/Edit Modal */}
+       <Modal 
+         isOpen={showMemberModal} 
+         onClose={() => setShowMemberModal(false)} 
+         title={selectedMember ? 'Edit Profile' : 'Add New Member'} 
+         size="md"
+       >
+         <div className="space-y-4 pt-2">
+             <div className="space-y-1.5">
+                 <label className="text-sm font-semibold">Full Name</label>
+                 <input 
+                    type="text" 
+                    className="input-field w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
+                    value={formData.name || ''} 
+                    onChange={e => setFormData({...formData, name: e.target.value})}
+                    placeholder="e.g. John Doe"
+                 />
+             </div>
+             <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-1.5">
+                     <label className="text-sm font-semibold">Phone</label>
+                     <input 
+                        type="tel" 
+                        className="input-field w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
+                        value={formData.phone || ''} 
+                        onChange={e => setFormData({...formData, phone: e.target.value})}
+                        placeholder="+27..."
+                     />
+                 </div>
+                 <div className="space-y-1.5">
+                     <label className="text-sm font-semibold">Email</label>
+                     <input 
+                        type="email" 
+                        className="input-field w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
+                        value={formData.email || ''} 
+                        onChange={e => setFormData({...formData, email: e.target.value})}
+                        placeholder="email@example.com"
+                     />
+                 </div>
+             </div>
+             <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-1.5">
+                     <label className="text-sm font-semibold">Monthly Pledge ({tenant.currency})</label>
+                     <input 
+                        type="number" 
+                        className="input-field w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
+                        value={formData.monthlyPledge || ''} 
+                        onChange={e => setFormData({...formData, monthlyPledge: Number(e.target.value)})}
+                     />
+                 </div>
+                 <div className="space-y-1.5">
+                     <label className="text-sm font-semibold">Join Date</label>
+                     <input 
+                        type="date" 
+                        className="input-field w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
+                        value={formData.joinDate || ''} 
+                        onChange={e => setFormData({...formData, joinDate: e.target.value})}
+                     />
+                 </div>
+             </div>
+             <div className="space-y-1.5">
+                 <label className="text-sm font-semibold">Status</label>
+                 <select 
+                    className="input-field w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={formData.status || 'ACTIVE'}
+                    onChange={e => setFormData({...formData, status: e.target.value as any})}
+                 >
+                     <option value="ACTIVE">Active</option>
+                     <option value="INACTIVE">Inactive</option>
+                 </select>
+             </div>
+
+             <div className="pt-4 flex justify-end gap-2">
+                 <Button variant="ghost" onClick={() => setShowMemberModal(false)}>Cancel</Button>
+                 <Button onClick={handleSaveMember}>
+                    <Save size={18} className="mr-2" /> Save Member
+                 </Button>
+             </div>
+         </div>
+       </Modal>
+
+       {/* Invite Modal */}
+       <Modal
+         isOpen={showInviteModal}
+         onClose={() => setShowInviteModal(false)}
+         title="Invite New Member"
+         size="sm"
+       >
+           <div className="space-y-4 pt-2">
+               <p className="text-sm text-slate-500">Send an email invitation to join the {tenant.name} stokvel group.</p>
+               <div className="space-y-1.5">
+                   <label className="text-sm font-semibold">Email Address</label>
+                   <input 
+                      type="email" 
+                      className="input-field w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
+                      value={inviteEmail} 
+                      onChange={e => setInviteEmail(e.target.value)}
+                      placeholder="Enter email..."
+                   />
+               </div>
+               <div className="pt-2 flex justify-end gap-2">
+                   <Button variant="ghost" onClick={() => setShowInviteModal(false)}>Cancel</Button>
+                   <Button onClick={handleSendInvite} disabled={!inviteEmail}>
+                       <Mail size={18} className="mr-2" /> Send Invite
+                   </Button>
+               </div>
+           </div>
+       </Modal>
     </div>
   );
 };

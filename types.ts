@@ -65,6 +65,7 @@ export interface Tenant {
   currency: string;
   subscriptionTier: 'BASIC' | 'PRO' | 'ENTERPRISE';
   isActive: boolean;
+  target?: number; // Financial target for the stokvel
 }
 
 export interface Branch {
@@ -89,6 +90,7 @@ export interface StokvelMember {
   tenantId: string;
   name: string;
   phone: string;
+  email?: string; // Added email
   joinDate: string;
   monthlyPledge: number;
   totalContributed: number;

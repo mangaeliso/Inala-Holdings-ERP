@@ -24,7 +24,8 @@ export const MOCK_TENANTS: Tenant[] = [
     primaryColor: '#0ea5e9',
     currency: 'ZAR',
     subscriptionTier: 'ENTERPRISE',
-    isActive: true
+    isActive: true,
+    target: 500000 // R500k Target
   },
   {
     id: 't_stok_02',
@@ -34,7 +35,8 @@ export const MOCK_TENANTS: Tenant[] = [
     primaryColor: '#8b5cf6',
     currency: 'ZAR',
     subscriptionTier: 'BASIC',
-    isActive: true
+    isActive: true,
+    target: 20000 // R20k Target
   },
   // Businesses
   {
@@ -555,6 +557,7 @@ export const MOCK_STOKVEL_MEMBERS: StokvelMember[] = [
         tenantId: 't_stok_01',
         name: 'Julius Malema',
         phone: '+27 82 000 0001',
+        email: 'julius@example.com',
         joinDate: '2024-01-15',
         monthlyPledge: 5000,
         totalContributed: 55000,
@@ -567,6 +570,7 @@ export const MOCK_STOKVEL_MEMBERS: StokvelMember[] = [
         tenantId: 't_stok_01',
         name: 'Kabelo Mabalane',
         phone: '+27 82 000 0002',
+        email: 'kabelo@example.com',
         joinDate: '2024-01-20',
         monthlyPledge: 5000,
         totalContributed: 50000,
@@ -579,6 +583,7 @@ export const MOCK_STOKVEL_MEMBERS: StokvelMember[] = [
         tenantId: 't_stok_01',
         name: 'DJ Black Coffee',
         phone: '+27 82 000 0003',
+        email: 'coffee@music.com',
         joinDate: '2024-02-01',
         monthlyPledge: 10000,
         totalContributed: 100000,
@@ -592,6 +597,7 @@ export const MOCK_STOKVEL_MEMBERS: StokvelMember[] = [
         tenantId: 't_stok_02',
         name: 'Gogo Mavuso',
         phone: '+27 71 555 1234',
+        email: 'gogo@example.com',
         joinDate: '2023-11-10',
         monthlyPledge: 500,
         totalContributed: 6000,
@@ -604,6 +610,7 @@ export const MOCK_STOKVEL_MEMBERS: StokvelMember[] = [
         tenantId: 't_stok_02',
         name: 'Sipho Hotstix',
         phone: '+27 71 555 9876',
+        email: 'sipho@example.com',
         joinDate: '2023-11-12',
         monthlyPledge: 500,
         totalContributed: 5500,
