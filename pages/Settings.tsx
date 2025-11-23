@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -16,9 +17,13 @@ import {
   LayoutGrid,
   Lock,
   Smartphone,
-  Server
+  Server,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  Send
 } from 'lucide-react';
-import { MOCK_USERS, MOCK_TENANTS } from '../services/mockData';
+import { MOCK_USERS, MOCK_TENANTS, sendMockEmail } from '../services/mockData';
 import { User, UserRole } from '../types';
 
 const EMAIL_TEMPLATES = [
@@ -36,7 +41,7 @@ export const Settings: React.FC = () => {
   const tabs = [
     { id: 'general', label: 'Global Config', icon: Globe, desc: 'System identity & localization' },
     { id: 'users', label: 'User Management', icon: Users, desc: 'Roles, access & permissions' },
-    { id: 'communication', label: 'Communication', icon: Mail, desc: 'Templates & notifications' },
+    { id: 'communication', label: 'Communication', icon: Mail, desc: 'SMTP, IMAP & Templates' },
     { id: 'security', label: 'Security & Audit', icon: Shield, desc: '2FA, Sessions & Logs' },
   ];
 
@@ -256,63 +261,129 @@ export const Settings: React.FC = () => {
   const CommunicationHub = () => {
       const [showTemplateModal, setShowTemplateModal] = useState(false);
       const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+      const [testEmailStatus, setTestEmailStatus] = useState<'IDLE' | 'SENDING' | 'SUCCESS' | 'ERROR'>('IDLE');
+
+      const handleSendTestEmail = () => {
+          setTestEmailStatus('SENDING');
+          setTimeout(() => {
+              // Simulate API Call
+              sendMockEmail({
+                  to: 'admin@test.com',
+                  subject: 'Inala ERP Test Email',
+                  body: 'Email system is working correctly. This is a generated test message.'
+              });
+              setTestEmailStatus('SUCCESS');
+              setTimeout(() => setTestEmailStatus('IDLE'), 3000);
+          }, 2000);
+      };
 
       return (
           <div className="space-y-6 animate-fade-in">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Channels */}
-                  <div className="lg:col-span-1 space-y-4">
-                      <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">Notification Channels</h3>
-                      <Card className="space-y-4">
-                          {[
-                              { label: 'Email Alerts', icon: Mail, enabled: true },
-                              { label: 'SMS Notifications', icon: Smartphone, enabled: true },
-                              { label: 'Push Notifications', icon: Bell, enabled: false },
-                              { label: 'Webhook Events', icon: Server, enabled: false }
-                          ].map((channel, i) => (
-                              <div key={i} className="flex items-center justify-between p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer">
-                                  <div className="flex items-center gap-3">
-                                      <div className={`p-2 rounded-lg ${channel.enabled ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                          <channel.icon size={18} />
-                                      </div>
-                                      <span className={`font-medium ${channel.enabled ? 'text-slate-900 dark:text-white' : 'text-slate-500'}`}>{channel.label}</span>
-                                  </div>
-                                  <div className={`w-10 h-6 rounded-full p-1 transition-colors ${channel.enabled ? 'bg-indigo-600' : 'bg-slate-300'}`}>
-                                      <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${channel.enabled ? 'translate-x-4' : 'translate-x-0'}`}></div>
-                                  </div>
-                              </div>
-                          ))}
-                      </Card>
-                  </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                   {/* SMTP Configuration Card */}
+                   <Card className="border-l-4 border-indigo-500">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                                <Send size={20} className="text-indigo-500"/> SMTP Configuration (Outbound)
+                            </h3>
+                            <div className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold">CONNECTED</div>
+                        </div>
+                        <div className="space-y-4">
+                             <div className="grid grid-cols-3 gap-4">
+                                 <div className="col-span-2 space-y-1">
+                                     <label className="text-xs font-bold text-slate-500">SMTP Host</label>
+                                     <input type="text" value="smtp.gmail.com" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                                 </div>
+                                 <div className="space-y-1">
+                                     <label className="text-xs font-bold text-slate-500">Port</label>
+                                     <input type="text" value="587" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                                 </div>
+                             </div>
+                             <div className="space-y-1">
+                                 <label className="text-xs font-bold text-slate-500">Username</label>
+                                 <input type="text" value="inala.holdingz@gmail.com" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                             </div>
+                             <div className="space-y-1">
+                                 <label className="text-xs font-bold text-slate-500">App Password</label>
+                                 <input type="password" value="****************" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                             </div>
+                             <div className="pt-2">
+                                <Button 
+                                    onClick={handleSendTestEmail} 
+                                    isLoading={testEmailStatus === 'SENDING'}
+                                    className={`w-full ${testEmailStatus === 'SUCCESS' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
+                                >
+                                    {testEmailStatus === 'SUCCESS' ? (
+                                        <><CheckCircle2 size={18} className="mr-2" /> Test Email Sent!</>
+                                    ) : (
+                                        'Send Test Email'
+                                    )}
+                                </Button>
+                             </div>
+                        </div>
+                   </Card>
 
-                  {/* Templates */}
-                  <div className="lg:col-span-2">
-                      <div className="flex justify-between items-center mb-4">
-                          <h3 className="font-bold text-lg text-slate-900 dark:text-white">Email Templates</h3>
-                          <Button size="sm" onClick={() => { setSelectedTemplate(null); setShowTemplateModal(true); }}>
-                              <Plus size={16} className="mr-2"/> New Template
-                          </Button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {EMAIL_TEMPLATES.map(template => (
-                              <div 
-                                key={template.id} 
-                                className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-indigo-500 cursor-pointer transition-all group"
-                                onClick={() => { setSelectedTemplate(template); setShowTemplateModal(true); }}
-                              >
-                                  <div className="flex justify-between items-start mb-2">
-                                      <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-indigo-50 group-hover:text-indigo-600 rounded-lg transition-colors">
-                                          <Mail size={20} />
-                                      </div>
-                                      <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">
-                                          {template.lastEdited}
-                                      </span>
+                   {/* IMAP Configuration Card */}
+                   <Card className="border-l-4 border-emerald-500">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                                <Mail size={20} className="text-emerald-500"/> IMAP Listener (Inbound)
+                            </h3>
+                            <div className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold">LISTENING</div>
+                        </div>
+                        <div className="space-y-4">
+                             <div className="grid grid-cols-3 gap-4">
+                                 <div className="col-span-2 space-y-1">
+                                     <label className="text-xs font-bold text-slate-500">IMAP Host</label>
+                                     <input type="text" value="imap.gmail.com" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                                 </div>
+                                 <div className="space-y-1">
+                                     <label className="text-xs font-bold text-slate-500">Port</label>
+                                     <input type="text" value="993" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                                 </div>
+                             </div>
+                             <div className="space-y-1">
+                                 <label className="text-xs font-bold text-slate-500">Username</label>
+                                 <input type="text" value="inala.holdingz@gmail.com" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                             </div>
+                             <div className="space-y-1">
+                                 <label className="text-xs font-bold text-slate-500">App Password</label>
+                                 <input type="password" value="****************" disabled className="input-field bg-slate-100 dark:bg-slate-800" />
+                             </div>
+                             <div className="pt-2 text-center text-xs text-slate-500">
+                                 <p className="flex items-center justify-center gap-2"><RefreshCw size={12} className="animate-spin"/> Last check: Just now</p>
+                             </div>
+                        </div>
+                   </Card>
+              </div>
+
+              {/* Templates Section */}
+              <div className="mt-8">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-lg text-slate-900 dark:text-white">Email Templates</h3>
+                      <Button size="sm" onClick={() => { setSelectedTemplate(null); setShowTemplateModal(true); }}>
+                          <Plus size={16} className="mr-2"/> New Template
+                      </Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {EMAIL_TEMPLATES.map(template => (
+                          <div 
+                            key={template.id} 
+                            className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:border-indigo-500 cursor-pointer transition-all group"
+                            onClick={() => { setSelectedTemplate(template); setShowTemplateModal(true); }}
+                          >
+                              <div className="flex justify-between items-start mb-2">
+                                  <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-indigo-50 group-hover:text-indigo-600 rounded-lg transition-colors">
+                                      <Mail size={20} />
                                   </div>
-                                  <h4 className="font-bold text-slate-900 dark:text-white mb-1">{template.name}</h4>
-                                  <p className="text-xs text-slate-500 truncate">{template.subject}</p>
+                                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500">
+                                      {template.lastEdited}
+                                  </span>
                               </div>
-                          ))}
-                      </div>
+                              <h4 className="font-bold text-slate-900 dark:text-white mb-1">{template.name}</h4>
+                              <p className="text-xs text-slate-500 truncate">{template.subject}</p>
+                          </div>
+                      ))}
                   </div>
               </div>
 

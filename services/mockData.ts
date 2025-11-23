@@ -1,5 +1,5 @@
 
-import { Tenant, User, UserRole, Product, Transaction, TransactionType, PaymentMethod, Loan, LoanStatus, POPStatus, POPDocument, Customer, TenantType, StokvelMember, Contribution, ContributionStatus, Payout, Expense } from '../types';
+import { Tenant, User, UserRole, Product, Transaction, TransactionType, PaymentMethod, Loan, LoanStatus, POPStatus, POPDocument, Customer, TenantType, StokvelMember, Contribution, ContributionStatus, Payout, Expense, EmailMessage } from '../types';
 
 // 0. Global Parent Tenant
 export const INALA_HOLDINGS_TENANT: Tenant = {
@@ -677,6 +677,58 @@ export const MOCK_PAYOUTS: Payout[] = [
         period: '2025-01'
     }
 ];
+
+// 11. Email System Mock Data
+export const MOCK_EMAILS: EmailMessage[] = [
+  {
+    id: 'em_001',
+    from: 'system@inala.holdings',
+    fromName: 'Inala ERP System',
+    to: 'inala.holdingz@gmail.com',
+    subject: 'Welcome to Inala ERP',
+    body: 'Your account has been successfully created. Welcome aboard!',
+    timestamp: new Date(Date.now() - 86400000 * 5).toISOString(),
+    status: 'READ',
+    folder: 'INBOX'
+  },
+  {
+    id: 'em_002',
+    from: 'payments@bank.com',
+    fromName: 'Standard Bank',
+    to: 'inala.holdingz@gmail.com',
+    subject: 'Payment Notification: R 12,500.00',
+    body: 'A new payment of R 12,500.00 has been received into your account from INALA BUTCHERY.',
+    timestamp: new Date(Date.now() - 3600000).toISOString(),
+    status: 'UNREAD',
+    folder: 'INBOX'
+  },
+  {
+    id: 'em_003',
+    from: 'inala.holdingz@gmail.com',
+    to: 'julius@example.com',
+    subject: 'Invoice #INV-0092',
+    body: 'Please find attached your invoice for recent purchases at Inala Butchery.',
+    timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
+    status: 'SENT',
+    folder: 'SENT'
+  }
+];
+
+export const sendMockEmail = (email: Partial<EmailMessage>) => {
+  const newEmail: EmailMessage = {
+    id: `em_${Date.now()}`,
+    from: 'inala.holdingz@gmail.com',
+    fromName: 'Inala ERP',
+    to: email.to!,
+    subject: email.subject!,
+    body: email.body!,
+    timestamp: new Date().toISOString(),
+    status: 'SENT',
+    folder: 'SENT'
+  };
+  MOCK_EMAILS.unshift(newEmail);
+  return newEmail;
+};
 
 // Helper to get reporting window (5th to 5th)
 export const getReportingWindow = () => {

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -16,7 +17,8 @@ import {
   Gem,
   Sun,
   Moon,
-  RefreshCw
+  RefreshCw,
+  Mail
 } from 'lucide-react';
 import { Tenant, User } from '../types';
 
@@ -49,6 +51,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'businesses', label: 'Businesses', icon: Store },
     { id: 'stokvels', label: 'Stokvels', icon: Users },
     { id: 'exchange', label: 'Currency Exchange', icon: RefreshCw },
+    { id: 'inbox', label: 'Inbox', icon: Mail },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -61,6 +64,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'finance', label: 'Finance', icon: FileText },
     { id: 'exchange', label: 'Exchange', icon: RefreshCw },
     { id: 'users', label: 'Users', icon: Users },
+    { id: 'inbox', label: 'Inbox', icon: Mail },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

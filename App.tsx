@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
@@ -10,6 +11,7 @@ import { BusinessDashboard } from './pages/BusinessDashboard';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { CurrencyExchange } from './pages/CurrencyExchange';
+import { Inbox } from './pages/Inbox';
 import { MOCK_USERS, INALA_HOLDINGS_TENANT, MOCK_TENANTS } from './services/mockData';
 import { Tenant, User } from './types';
 
@@ -80,6 +82,8 @@ const App: React.FC = () => {
         return <Finance />;
       case 'exchange':
          return <CurrencyExchange />;
+      case 'inbox':
+         return <Inbox />;
       case 'settings':
          return <Settings />;
       case 'profile':

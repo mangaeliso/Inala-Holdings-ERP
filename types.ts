@@ -200,3 +200,15 @@ export interface POPDocument {
   status: POPStatus;
   timestamp: string;
 }
+
+export interface EmailMessage {
+  id: string;
+  from: string;
+  fromName?: string;
+  to: string;
+  subject: string;
+  body: string;
+  timestamp: string;
+  status: 'READ' | 'UNREAD' | 'SENT' | 'FAILED';
+  folder: 'INBOX' | 'SENT';
+}
