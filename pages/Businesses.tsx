@@ -9,18 +9,18 @@ interface BusinessesProps {
 }
 
 export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
-  const businesses = MOCK_TENANTS.filter(t => t.type === TenantType.BUSINESS && t.id !== 'global');
+  const businesses = MOCK_TENANTS.filter(t => (t.type === TenantType.BUSINESS || t.type === TenantType.LENDING) && t.id !== 'global');
 
   return (
     <div className="space-y-8 animate-fade-in">
         <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
             <div>
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Business Units</h2>
-                <p className="text-slate-500 mt-2 text-base">Overview of your retail outlets, performance stats, and terminal access.</p>
+                <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Business Units & Lenders</h2>
+                <p className="text-slate-500 mt-2 text-base">Overview of retail outlets, service points, and lending entities.</p>
             </div>
             <Button className="shadow-lg shadow-indigo-500/20">
                 <Plus size={18} className="mr-2" />
-                New Business Entity
+                New Entity
             </Button>
         </div>
 
@@ -52,9 +52,9 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                                 <div>
                                     <h3 className="font-bold text-xl leading-tight text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors cursor-pointer" onClick={() => onOpenModule('business-dashboard', biz.id)}>{biz.name}</h3>
                                      {/* Badges */}
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
-                                            {biz.subscriptionTier}
+                                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${biz.type === TenantType.LENDING ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+                                            {biz.type === TenantType.LENDING ? 'Lender' : 'Business'}
                                         </span>
                                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
                                             {biz.currency}
@@ -77,7 +77,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                         {/* Stats Section */}
                         <div className="flex items-center justify-between py-4 border-t border-b border-slate-50 dark:border-slate-800 mb-6 bg-slate-50/50 dark:bg-slate-800/20 -mx-6 px-6">
                             <div>
-                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mb-1">Today's Revenue</p>
+                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mb-1">Active Revenue</p>
                                  <div className="flex items-center gap-2">
                                      <span className="text-lg font-black text-slate-900 dark:text-white">R 12,450</span>
                                      <span className="flex items-center text-[10px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded-full">
@@ -101,7 +101,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                             className="flex items-center justify-center gap-2 bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg shadow-slate-900/10 h-11 transition-all active:scale-95"
                             onClick={() => onOpenModule('business-dashboard', biz.id)}
                          >
-                            <ShoppingCart size={18} /> <span className="font-bold">Open POS</span>
+                            <ShoppingCart size={18} /> <span className="font-bold">Open Terminal</span>
                          </Button>
                          <Button 
                             variant="outline" 
@@ -119,9 +119,9 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                 <div className="w-20 h-20 rounded-full bg-white dark:bg-slate-800 shadow-sm group-hover:shadow-md group-hover:scale-110 transition-all flex items-center justify-center mb-6">
                     <Plus size={32} className="text-slate-300 group-hover:text-indigo-500 transition-colors" />
                 </div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors">Register New Business</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors">Register New Entity</h3>
                 <p className="text-sm text-slate-500 mt-2 max-w-[200px] leading-relaxed">
-                    Add a new retail outlet, branch, or service point to your organization.
+                    Add a new retail outlet, branch, or lending service to your organization.
                 </p>
             </button>
         </div>

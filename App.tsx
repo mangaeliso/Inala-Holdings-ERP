@@ -7,9 +7,9 @@ import { Businesses } from './pages/Businesses';
 import { Stokvels } from './pages/Stokvels';
 import { StokvelDashboard } from './pages/StokvelDashboard';
 import { BusinessDashboard } from './pages/BusinessDashboard';
-import { Lending } from './pages/Lending';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
+import { CurrencyExchange } from './pages/CurrencyExchange';
 import { MOCK_USERS, INALA_HOLDINGS_TENANT, MOCK_TENANTS } from './services/mockData';
 import { Tenant, User } from './types';
 
@@ -76,10 +76,10 @@ const App: React.FC = () => {
         return <StokvelDashboard tenantId={contextTenantId!} onBack={() => setActiveTab('stokvels')} />;
       case 'business-dashboard':
         return <BusinessDashboard tenantId={contextTenantId!} onBack={() => setActiveTab('businesses')} />;
-      case 'lending':
-        return <Lending />;
       case 'finance':
         return <Finance />;
+      case 'exchange':
+         return <CurrencyExchange />;
       case 'settings':
          return <Settings />;
       case 'profile':

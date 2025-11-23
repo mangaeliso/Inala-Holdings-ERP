@@ -15,7 +15,8 @@ import {
   Landmark,
   Gem,
   Sun,
-  Moon
+  Moon,
+  RefreshCw
 } from 'lucide-react';
 import { Tenant, User } from '../types';
 
@@ -47,8 +48,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'businesses', label: 'Businesses', icon: Store },
     { id: 'stokvels', label: 'Stokvels', icon: Users },
-    { id: 'lending', label: 'Lending', icon: Landmark },
-    { id: 'finance', label: 'Global Finance', icon: FileText },
+    { id: 'exchange', label: 'Currency Exchange', icon: RefreshCw },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -59,6 +59,7 @@ export const Layout: React.FC<LayoutProps> = ({
     { id: 'inventory', label: 'Inventory', icon: Gem },
     { id: 'loans', label: 'Loans', icon: CreditCard },
     { id: 'finance', label: 'Finance', icon: FileText },
+    { id: 'exchange', label: 'Exchange', icon: RefreshCw },
     { id: 'users', label: 'Users', icon: Users },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
