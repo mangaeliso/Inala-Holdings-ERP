@@ -2,14 +2,11 @@ import React, { useState } from 'react';
 import { MOCK_TENANTS } from '../services/mockData';
 import { POS } from './POS';
 import { Inventory } from './Inventory';
-import { Customers } from './Customers';
 import { Reports } from './Reports';
 import { Expenses } from './Expenses';
 import { 
-  Store, 
   ShoppingCart, 
   Package, 
-  Users, 
   BarChart2, 
   ArrowLeft,
   DollarSign
@@ -31,7 +28,6 @@ export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, 
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart },
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'expenses', label: 'Expenses', icon: DollarSign },
-    { id: 'customers', label: 'Customers', icon: Users },
     { id: 'reports', label: 'Reports', icon: BarChart2 },
   ];
 
@@ -83,7 +79,6 @@ export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, 
             <div className="absolute inset-0 overflow-hidden">
                 {activeTab === 'pos' && <div className="h-full p-4 md:p-6 overflow-hidden"><POS tenantId={tenantId} /></div>}
                 {activeTab === 'inventory' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Inventory tenantId={tenantId} /></div>}
-                {activeTab === 'customers' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Customers tenantId={tenantId} /></div>}
                 {activeTab === 'reports' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Reports tenantId={tenantId} /></div>}
                 {activeTab === 'expenses' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Expenses tenantId={tenantId} /></div>}
             </div>
