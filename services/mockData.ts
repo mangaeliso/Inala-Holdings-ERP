@@ -1,4 +1,5 @@
-import { Tenant, User, UserRole, Product, Transaction, TransactionType, PaymentMethod, Loan, LoanStatus, POPStatus, POPDocument, Customer, TenantType, StokvelMember, Contribution, ContributionStatus, Payout } from '../types';
+
+import { Tenant, User, UserRole, Product, Transaction, TransactionType, PaymentMethod, Loan, LoanStatus, POPStatus, POPDocument, Customer, TenantType, StokvelMember, Contribution, ContributionStatus, Payout, Expense } from '../types';
 
 // 0. Global Parent Tenant
 export const INALA_HOLDINGS_TENANT: Tenant = {
@@ -98,92 +99,261 @@ export const MOCK_USERS: User[] = [
 ];
 
 // 3. Products (Scoped to Businesses)
-export const MOCK_PRODUCTS: Product[] = [
-  // Butchery Products
+export let MOCK_PRODUCTS: Product[] = [
+  // --- INALA BUTCHERY PRODUCTS ---
+  
+  // Beef Category
   {
-    id: 'p_001',
-    tenantId: 't_biz_01', // Butchery
-    name: 'Premium Beef Stew Cut',
-    sku: 'BEEF-001',
-    category: 'Meat',
-    price: 120.00,
-    cost: 85.00,
-    stockLevel: 45,
+    id: 'p_beef_01',
+    tenantId: 't_biz_01',
+    name: 'Beef Stew',
+    sku: 'BF-STEW-001',
+    category: 'Beef',
+    subcategory: 'Stewing Meat',
+    price: 95.00,
+    cost: 65.00,
+    stockLevel: 50,
     minStockThreshold: 10,
-    imageUrl: 'https://images.unsplash.com/photo-1603048297172-c92544798d5e?auto=format&fit=crop&q=80&w=300&h=300'
+    unit: 'kg'
   },
   {
-    id: 'p_002',
-    tenantId: 't_biz_01', // Butchery
-    name: 'Lamb Chops 1kg',
-    sku: 'LAMB-002',
-    category: 'Meat',
-    price: 189.99,
-    cost: 140.00,
-    stockLevel: 20,
+    id: 'p_beef_02',
+    tenantId: 't_biz_01',
+    name: 'Beef Mince',
+    sku: 'BF-MINC-001',
+    category: 'Beef',
+    subcategory: 'Mince',
+    price: 90.00,
+    cost: 60.00,
+    stockLevel: 35,
+    minStockThreshold: 10,
+    unit: 'kg'
+  },
+  {
+    id: 'p_beef_03',
+    tenantId: 't_biz_01',
+    name: 'T-Bone Steak',
+    sku: 'BF-STK-001',
+    category: 'Beef',
+    subcategory: 'Steak',
+    price: 130.00,
+    cost: 90.00,
+    stockLevel: 30,
     minStockThreshold: 5,
-    imageUrl: 'https://images.unsplash.com/photo-1602498456745-e9503b30470b?auto=format&fit=crop&q=80&w=300&h=300'
+    unit: 'kg'
+  },
+  
+  // Wors Category
+  {
+    id: 'p_wors_01',
+    tenantId: 't_biz_01',
+    name: 'Inala Boerewors',
+    sku: 'WS-BOER-001',
+    category: 'Wors',
+    subcategory: 'Traditional',
+    price: 89.99,
+    cost: 55.00,
+    stockLevel: 80,
+    minStockThreshold: 15,
+    unit: 'kg'
   },
   {
-    id: 'p_005',
-    tenantId: 't_biz_01', // Butchery
-    name: 'Boerewors Special',
-    sku: 'SAUS-001',
-    category: 'Sausage',
-    price: 89.99,
-    cost: 50.00,
+    id: 'p_wors_02',
+    tenantId: 't_biz_01',
+    name: 'Chilli Wors',
+    sku: 'WS-CHIL-001',
+    category: 'Wors',
+    subcategory: 'Spicy',
+    price: 92.00,
+    cost: 57.00,
+    stockLevel: 40,
+    minStockThreshold: 10,
+    unit: 'kg'
+  },
+
+  // Pork Category
+  {
+    id: 'p_pork_01',
+    tenantId: 't_biz_01',
+    name: 'Pork Chops',
+    sku: 'PK-CHP-001',
+    category: 'Pork',
+    subcategory: 'Chops',
+    price: 95.00,
+    cost: 60.00,
+    stockLevel: 40,
+    minStockThreshold: 10,
+    unit: 'kg'
+  },
+  {
+    id: 'p_pork_02',
+    tenantId: 't_biz_01',
+    name: 'Pork Stew',
+    sku: 'PK-STEW-001',
+    category: 'Pork',
+    subcategory: 'Stewing Meat',
+    price: 75.00,
+    cost: 45.00,
+    stockLevel: 55,
+    minStockThreshold: 10,
+    unit: 'kg'
+  },
+
+  // Bones Category
+  {
+    id: 'p_bones_01',
+    tenantId: 't_biz_01',
+    name: 'Meaty Bones',
+    sku: 'BN-MEAT-001',
+    category: 'Bones',
+    subcategory: 'Soup',
+    price: 45.00,
+    cost: 20.00,
     stockLevel: 100,
     minStockThreshold: 20,
-    imageUrl: 'https://images.unsplash.com/photo-1595480838330-811c762510c4?auto=format&fit=crop&q=80&w=300&h=300'
+    unit: 'kg'
   },
-  // Perfume Products
+
+  // Oxtail Category
   {
-    id: 'p_003',
+    id: 'p_oxtail_01',
+    tenantId: 't_biz_01',
+    name: 'Oxtail',
+    sku: 'OX-TAIL-001',
+    category: 'Oxtail',
+    subcategory: 'Premium',
+    price: 145.00,
+    cost: 95.00,
+    stockLevel: 25,
+    minStockThreshold: 5,
+    unit: 'kg'
+  },
+
+  // Head & Hooves Category
+  {
+    id: 'p_head_01',
+    tenantId: 't_biz_01',
+    name: 'Cow Head (Skopo)',
+    sku: 'HD-COW-001',
+    category: 'Head & Hooves',
+    subcategory: 'Head',
+    price: 350.00,
+    cost: 200.00,
+    stockLevel: 10,
+    minStockThreshold: 2,
+    unit: 'unit'
+  },
+  {
+    id: 'p_head_02',
+    tenantId: 't_biz_01',
+    name: 'Cow Heels (Mazondo)',
+    sku: 'HV-COW-001',
+    category: 'Head & Hooves',
+    subcategory: 'Hooves',
+    price: 75.00,
+    cost: 40.00,
+    stockLevel: 40,
+    minStockThreshold: 10,
+    unit: 'kg'
+  },
+
+  // Liver & Lungs Category
+  {
+    id: 'p_liver_01',
+    tenantId: 't_biz_01',
+    name: 'Ox Liver',
+    sku: 'LV-OX-001',
+    category: 'Liver & Lungs',
+    subcategory: 'Liver',
+    price: 65.00,
+    cost: 35.00,
+    stockLevel: 30,
+    minStockThreshold: 5,
+    unit: 'kg'
+  },
+
+  // Layers Chicken Category
+  {
+    id: 'p_chicken_01',
+    tenantId: 't_biz_01',
+    name: 'Hardbody Chicken (Layer)',
+    sku: 'CK-HARD-001',
+    category: 'Layers Chicken',
+    subcategory: 'Whole Bird',
+    price: 85.00,
+    cost: 50.00,
+    stockLevel: 60,
+    minStockThreshold: 15,
+    unit: 'unit'
+  },
+
+  // Offals Category
+  {
+    id: 'p_offal_01',
+    tenantId: 't_biz_01',
+    name: 'Clean Tripe (Mogodu)',
+    sku: 'OF-TRP-001',
+    category: 'Offals',
+    subcategory: 'Clean',
+    price: 75.00,
+    cost: 40.00,
+    stockLevel: 50,
+    minStockThreshold: 10,
+    unit: 'kg'
+  },
+
+  // --- INALA PERFUMES PRODUCTS ---
+  {
+    id: 'p_perf_01',
     tenantId: 't_biz_02', // Perfumes
     name: 'Oud Wood Intense',
     sku: 'PERF-001',
-    category: 'Fragrance',
-    price: 450.00,
-    cost: 120.00,
+    category: 'Perfume 600',
+    subcategory: 'Oud',
+    price: 600.00,
+    cost: 150.00,
     stockLevel: 100, 
     minStockThreshold: 15,
-    imageUrl: 'https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&q=80&w=300&h=300'
+    unit: 'unit',
   },
   {
-    id: 'p_004',
+    id: 'p_perf_02',
     tenantId: 't_biz_02', // Perfumes
     name: 'Vanilla Essence',
     sku: 'PERF-002',
-    category: 'Fragrance',
+    category: 'Perfume 350',
+    subcategory: 'Sweet',
     price: 350.00,
     cost: 90.00,
     stockLevel: 50,
     minStockThreshold: 10,
-    imageUrl: 'https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&q=80&w=300&h=300'
+    unit: 'unit',
   },
   {
-    id: 'p_006',
+    id: 'p_perf_03',
     tenantId: 't_biz_02', // Perfumes
     name: 'Ocean Breeze Mist',
     sku: 'PERF-003',
     category: 'Body Mist',
+    subcategory: 'Fresh',
     price: 150.00,
     cost: 40.00,
     stockLevel: 200,
     minStockThreshold: 30,
-    imageUrl: 'https://images.unsplash.com/photo-1615108395436-1e0de1c92a95?auto=format&fit=crop&q=80&w=300&h=300'
+    unit: 'unit',
   }
 ];
 
 // 4. Customers
-export const MOCK_CUSTOMERS: Customer[] = [
+export let MOCK_CUSTOMERS: Customer[] = [
     {
         id: 'c_001',
         tenantId: 't_biz_01',
         name: 'Mama Joy',
         phone: '+27 82 123 4567',
         creditLimit: 5000,
-        currentDebt: 1200
+        currentDebt: 1200,
+        lastPurchaseDate: '2025-02-15'
     },
     {
         id: 'c_002',
@@ -191,17 +361,28 @@ export const MOCK_CUSTOMERS: Customer[] = [
         name: 'Sipho Nkosi',
         phone: '+27 71 987 6543',
         creditLimit: 2000,
-        currentDebt: 0
+        currentDebt: 0,
+        lastPurchaseDate: '2025-01-20'
+    },
+    {
+        id: 'c_003',
+        tenantId: 't_biz_01',
+        name: 'Tshepo Restaurant',
+        phone: '+27 60 555 0000',
+        creditLimit: 10000,
+        currentDebt: 4500,
+        lastPurchaseDate: '2025-02-18'
     }
 ];
 
 // 5. Transactions
-export const MOCK_TRANSACTIONS: Transaction[] = [
+export let MOCK_TRANSACTIONS: Transaction[] = [
   {
     id: 'tx_1001',
     tenantId: 't_biz_01',
     branchId: 'b_001',
     customerId: 'c_001',
+    customerName: 'Mama Joy',
     type: TransactionType.SALE,
     amount: 1200.00,
     currency: 'ZAR',
@@ -209,23 +390,115 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     status: 'COMPLETED',
     timestamp: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 days ago
     reference: 'INV-0092',
-    items: [{ productId: 'p_001', name: 'Premium Beef', qty: 10, price: 120 }]
+    items: [{ productId: 'p_beef_01', name: 'Beef Stew', qty: 10, price: 95.00, subtotal: 950 }]
   },
   {
     id: 'tx_1002',
     tenantId: 't_biz_02',
     branchId: 'b_001',
     customerId: 'walk_in',
+    customerName: 'Walk-in Customer',
     type: TransactionType.SALE,
-    amount: 450.00,
+    amount: 600.00,
     currency: 'ZAR',
     method: PaymentMethod.CASH,
     status: 'COMPLETED',
     timestamp: new Date().toISOString(),
-    items: [{ productId: 'p_003', name: 'Oud Wood Intense', qty: 1, price: 450.00 }]
+    items: [{ productId: 'p_perf_01', name: 'Oud Wood Intense', qty: 1, price: 600.00, subtotal: 600 }]
   }
 ];
 
+// Expenses
+export let MOCK_EXPENSES: Expense[] = [
+    {
+        id: 'exp_001',
+        tenantId: 't_biz_01',
+        description: 'Monthly Shop Rental',
+        category: 'Rent',
+        amount: 8500.00,
+        date: new Date(Date.now() - 86400000 * 15).toISOString(),
+        status: 'PAID'
+    },
+    {
+        id: 'exp_002',
+        tenantId: 't_biz_01',
+        description: 'Packaging Supplies',
+        category: 'Supplies',
+        amount: 1200.00,
+        date: new Date(Date.now() - 86400000 * 5).toISOString(),
+        status: 'PAID'
+    },
+    {
+        id: 'exp_003',
+        tenantId: 't_biz_01',
+        description: 'Electricity Bill',
+        category: 'Utilities',
+        amount: 2500.00,
+        date: new Date().toISOString(),
+        status: 'PENDING'
+    }
+];
+
+// --- Helpers to simulate Backend CRUD ---
+
+export const addTransaction = (tx: Transaction) => {
+    MOCK_TRANSACTIONS.unshift(tx);
+    
+    // Update Stock
+    if (tx.items && tx.type === TransactionType.SALE) {
+        tx.items.forEach(item => {
+            const product = MOCK_PRODUCTS.find(p => p.id === item.productId);
+            if (product) {
+                product.stockLevel -= item.qty;
+            }
+        });
+    }
+
+    // Update Credit Debt
+    if (tx.method === PaymentMethod.CREDIT && tx.customerId) {
+        const customer = MOCK_CUSTOMERS.find(c => c.id === tx.customerId);
+        if (customer) {
+            customer.currentDebt += tx.amount;
+            customer.lastPurchaseDate = new Date().toISOString();
+        }
+    }
+    
+    // Debt Payment
+    if (tx.type === TransactionType.DEBT_PAYMENT && tx.customerId) {
+        const customer = MOCK_CUSTOMERS.find(c => c.id === tx.customerId);
+        if (customer) {
+            customer.currentDebt = Math.max(0, customer.currentDebt - tx.amount);
+        }
+    }
+};
+
+export const addCustomer = (customer: Customer) => {
+    MOCK_CUSTOMERS.push(customer);
+};
+
+export const addProduct = (product: Product) => {
+    MOCK_PRODUCTS.push(product);
+};
+
+export const updateProduct = (product: Product) => {
+    const index = MOCK_PRODUCTS.findIndex(p => p.id === product.id);
+    if (index !== -1) {
+        MOCK_PRODUCTS[index] = product;
+    }
+};
+
+export const deleteProduct = (productId: string) => {
+    const index = MOCK_PRODUCTS.findIndex(p => p.id === productId);
+    if (index !== -1) {
+        MOCK_PRODUCTS.splice(index, 1);
+    }
+};
+
+export const addExpense = (expense: Expense) => {
+    MOCK_EXPENSES.unshift(expense);
+}
+
+// ... other mock data ...
 // 6. Loans
 export const MOCK_LOANS: Loan[] = [
   {

@@ -2,15 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
-import { POS } from './pages/POS';
 import { Finance } from './pages/Finance';
 import { Businesses } from './pages/Businesses';
 import { Stokvels } from './pages/Stokvels';
 import { StokvelDashboard } from './pages/StokvelDashboard';
+import { BusinessDashboard } from './pages/BusinessDashboard';
 import { Lending } from './pages/Lending';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
-import { Inventory } from './pages/Inventory';
 import { MOCK_USERS, INALA_HOLDINGS_TENANT, MOCK_TENANTS } from './services/mockData';
 import { Tenant, User } from './types';
 
@@ -58,9 +57,8 @@ const App: React.FC = () => {
   };
 
   const handleNavigate = (tab: string) => {
-      // If navigating away from a specific context module (like POS/Inventory for a specific business)
-      // reset the context unless we are just switching between POS/Inventory for that same business.
-      if (!['pos', 'inventory', 'stokvel-dashboard'].includes(tab)) {
+      // If navigating away from a specific context module
+      if (!['business-dashboard', 'stokvel-dashboard'].includes(tab)) {
           setContextTenantId(null);
       }
       setActiveTab(tab);
@@ -76,23 +74,16 @@ const App: React.FC = () => {
         return <Stokvels onOpenModule={handleOpenModule} />;
       case 'stokvel-dashboard':
         return <StokvelDashboard tenantId={contextTenantId!} onBack={() => setActiveTab('stokvels')} />;
+      case 'business-dashboard':
+        return <BusinessDashboard tenantId={contextTenantId!} onBack={() => setActiveTab('businesses')} />;
       case 'lending':
         return <Lending />;
-      case 'pos':
-        // If opened from a specific tenant context, pass that down or filter data
-        return <POS tenantId={contextTenantId} onBack={() => setActiveTab('businesses')} />;
-      case 'inventory':
-        return <Inventory tenantId={contextTenantId} />;
       case 'finance':
         return <Finance />;
       case 'settings':
          return <Settings />;
       case 'profile':
          return <Profile user={currentUser!} />;
-      case 'loans':
-         return <div className="p-10 text-center text-slate-500">Loan Engine Placeholder</div>;
-      case 'users':
-         return <div className="p-10 text-center text-slate-500">User Management Placeholder</div>;
       default:
         return <Dashboard />;
     }

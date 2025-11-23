@@ -1,3 +1,4 @@
+
 // Enums for standardizing statuses and roles
 export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
@@ -21,7 +22,8 @@ export enum TransactionType {
   EXPENSE = 'EXPENSE',
   CAPITAL_INJECTION = 'CAPITAL_INJECTION',
   CONTRIBUTION = 'CONTRIBUTION',
-  PAYOUT = 'PAYOUT'
+  PAYOUT = 'PAYOUT',
+  DEBT_PAYMENT = 'DEBT_PAYMENT'
 }
 
 export enum PaymentMethod {
@@ -122,11 +124,14 @@ export interface Product {
   name: string;
   sku: string;
   category: string;
+  subcategory?: string; // Added subcategory
   price: number;
   cost: number;
   stockLevel: number;
   minStockThreshold: number;
-  imageUrl?: string;
+  // imageUrl removed as per request
+  imageUrl?: string; 
+  unit: 'kg' | 'unit' | 'litre' | 'box';
 }
 
 export interface Customer {
@@ -137,6 +142,17 @@ export interface Customer {
   email?: string;
   creditLimit: number;
   currentDebt: number;
+  lastPurchaseDate?: string;
+}
+
+export interface Expense {
+  id: string;
+  tenantId: string;
+  description: string;
+  category: string;
+  amount: number;
+  date: string;
+  status: 'PAID' | 'PENDING';
 }
 
 export interface Transaction {
@@ -144,6 +160,7 @@ export interface Transaction {
   tenantId: string;
   branchId: string;
   customerId?: string; // Optional (walk-in)
+  customerName?: string; // Snapshot
   type: TransactionType;
   amount: number;
   currency: string;
@@ -151,7 +168,8 @@ export interface Transaction {
   status: 'COMPLETED' | 'PENDING' | 'FAILED';
   timestamp: string; // ISO date
   reference?: string;
-  items?: { productId: string; name: string; qty: number; price: number }[];
+  receivedBy?: string; // Added receiver field
+  items?: { productId: string; name: string; qty: number; price: number; subtotal: number }[];
 }
 
 export interface Loan {
