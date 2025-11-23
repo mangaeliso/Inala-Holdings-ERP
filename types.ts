@@ -1,0 +1,182 @@
+// Enums for standardizing statuses and roles
+export enum UserRole {
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  TENANT_ADMIN = 'TENANT_ADMIN',
+  BRANCH_MANAGER = 'BRANCH_MANAGER',
+  TREASURER = 'TREASURER',
+  CASHIER = 'CASHIER',
+  MEMBER = 'MEMBER'
+}
+
+export enum TenantType {
+  BUSINESS = 'BUSINESS',
+  STOKVEL = 'STOKVEL',
+  LENDING = 'LENDING'
+}
+
+export enum TransactionType {
+  SALE = 'SALE',
+  LOAN_DISBURSEMENT = 'LOAN_DISBURSEMENT',
+  LOAN_REPAYMENT = 'LOAN_REPAYMENT',
+  EXPENSE = 'EXPENSE',
+  CAPITAL_INJECTION = 'CAPITAL_INJECTION',
+  CONTRIBUTION = 'CONTRIBUTION',
+  PAYOUT = 'PAYOUT'
+}
+
+export enum PaymentMethod {
+  CASH = 'CASH',
+  EFT = 'EFT',
+  MOMO = 'MOMO',
+  CREDIT = 'CREDIT'
+}
+
+export enum LoanStatus {
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
+  APPROVED = 'APPROVED',
+  ACTIVE = 'ACTIVE',
+  PAID = 'PAID',
+  DEFAULTED = 'DEFAULTED',
+  REJECTED = 'REJECTED'
+}
+
+export enum POPStatus {
+  PENDING = 'PENDING',
+  VERIFIED = 'VERIFIED',
+  REJECTED = 'REJECTED'
+}
+
+export enum ContributionStatus {
+  PAID = 'PAID',
+  PENDING = 'PENDING',
+  OVERDUE = 'OVERDUE',
+  PARTIAL = 'PARTIAL'
+}
+
+// Interfaces
+export interface Tenant {
+  id: string;
+  name: string;
+  type: TenantType;
+  logoUrl?: string;
+  primaryColor: string;
+  currency: string;
+  subscriptionTier: 'BASIC' | 'PRO' | 'ENTERPRISE';
+  isActive: boolean;
+}
+
+export interface Branch {
+  id: string;
+  tenantId: string;
+  name: string;
+  location: string;
+}
+
+export interface User {
+  id: string;
+  tenantId: string; // 'GLOBAL' for SuperAdmin
+  branchId?: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatarUrl?: string;
+}
+
+export interface StokvelMember {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string;
+  joinDate: string;
+  monthlyPledge: number;
+  totalContributed: number;
+  payoutQueuePosition?: number;
+  status: 'ACTIVE' | 'INACTIVE';
+  avatarUrl?: string;
+}
+
+export interface Contribution {
+  id: string;
+  tenantId: string;
+  memberId: string;
+  amount: number;
+  date: string;
+  period: string; // YYYY-MM
+  status: ContributionStatus;
+  method: PaymentMethod;
+}
+
+export interface Payout {
+  id: string;
+  tenantId: string;
+  memberId: string;
+  amount: number;
+  date: string;
+  status: 'PAID' | 'SCHEDULED' | 'PENDING';
+  period: string;
+}
+
+export interface Product {
+  id: string;
+  tenantId: string;
+  name: string;
+  sku: string;
+  category: string;
+  price: number;
+  cost: number;
+  stockLevel: number;
+  minStockThreshold: number;
+  imageUrl?: string;
+}
+
+export interface Customer {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string;
+  email?: string;
+  creditLimit: number;
+  currentDebt: number;
+}
+
+export interface Transaction {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  customerId?: string; // Optional (walk-in)
+  type: TransactionType;
+  amount: number;
+  currency: string;
+  method: PaymentMethod;
+  status: 'COMPLETED' | 'PENDING' | 'FAILED';
+  timestamp: string; // ISO date
+  reference?: string;
+  items?: { productId: string; name: string; qty: number; price: number }[];
+}
+
+export interface Loan {
+  id: string;
+  tenantId: string;
+  customerId: string;
+  customerName: string; // Denormalized for UI
+  amount: number;
+  interestRate: number;
+  totalRepayable: number;
+  balanceRemaining: number;
+  startDate: string;
+  dueDate: string;
+  status: LoanStatus;
+  approvals: { userId: string; role: UserRole; approved: boolean; date: string }[];
+}
+
+export interface POPDocument {
+  id: string;
+  tenantId: string;
+  uploadedBy: string;
+  amount: number;
+  reference: string;
+  imageUrl: string; // URL to image
+  ocrData?: string;
+  status: POPStatus;
+  timestamp: string;
+}

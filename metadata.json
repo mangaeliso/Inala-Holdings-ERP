@@ -1,0 +1,8 @@
+{
+  "name": "INALA ERP",
+  "description": "Enterprise-grade, multi-tenant ERP platform for businesses and cooperatives.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
