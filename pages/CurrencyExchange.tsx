@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -36,6 +37,13 @@ const INITIAL_RATES_TO_ZAR: Record<string, number> = {
   'CAD': 0.072,
   'JPY': 7.95,
   'CNY': 0.38
+};
+
+// Mock Wallet Holdings
+const MOCK_HOLDINGS: Record<string, number> = {
+    'USD': 50000,
+    'ZAR': 125000,
+    'MZN': 450000
 };
 
 export const CurrencyExchange: React.FC = () => {
@@ -81,11 +89,17 @@ export const CurrencyExchange: React.FC = () => {
   
   const convertedAmount = parseFloat(amount || '0') * exchangeRate;
 
+  // Portfolio Valuation Logic
+  // Convert each holding to ZAR first (Holding / Rate_Code), then to Target (Total_ZAR * Rate_Target)
+  const totalPortfolioValue = Object.entries(MOCK_HOLDINGS).reduce((acc, [code, qty]) => {
+      const rateCode = rates[code] || 1;
+      const valInZar = qty / rateCode;
+      return acc + valInZar;
+  }, 0) * rateTo;
+
   const fromSymbol = SUPPORTED_CURRENCIES.find(c => c.code === fromCurrency)?.symbol;
   const toSymbol = SUPPORTED_CURRENCIES.find(c => c.code === toCurrency)?.symbol;
-  const fromFlag = SUPPORTED_CURRENCIES.find(c => c.code === fromCurrency)?.flag;
-  const toFlag = SUPPORTED_CURRENCIES.find(c => c.code === toCurrency)?.flag;
-
+  
   return (
     <div className="space-y-6 animate-fade-in pb-12">
         {/* Header */}
@@ -231,7 +245,7 @@ export const CurrencyExchange: React.FC = () => {
                       <div className="space-y-6">
                            <div>
                                <p className="text-indigo-300 text-xs mb-1">Total in Base ({toCurrency})</p>
-                               <h3 className="text-3xl font-black">{toSymbol} {(50000 * (rates[toCurrency]/rates['USD'])).toLocaleString(undefined, {maximumFractionDigits: 0})}</h3>
+                               <h3 className="text-3xl font-black">{toSymbol} {totalPortfolioValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</h3>
                            </div>
                            <div className="w-full h-px bg-white/10"></div>
                            <div className="space-y-3">
@@ -240,21 +254,21 @@ export const CurrencyExchange: React.FC = () => {
                                         <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">🇺🇸</div>
                                         <span className="font-bold">USD</span>
                                     </div>
-                                    <span className="font-mono">$ 50,000</span>
+                                    <span className="font-mono">$ {MOCK_HOLDINGS['USD'].toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">🇿🇦</div>
                                         <span className="font-bold">ZAR</span>
                                     </div>
-                                    <span className="font-mono">R 125,000</span>
+                                    <span className="font-mono">R {MOCK_HOLDINGS['ZAR'].toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">🇲🇿</div>
                                         <span className="font-bold">MZN</span>
                                     </div>
-                                    <span className="font-mono">MT 450,000</span>
+                                    <span className="font-mono">MT {MOCK_HOLDINGS['MZN'].toLocaleString()}</span>
                                 </div>
                            </div>
                       </div>

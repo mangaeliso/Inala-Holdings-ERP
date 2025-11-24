@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -7,7 +6,6 @@ import {
   Globe, 
   Users, 
   Shield, 
-  Bell, 
   Mail, 
   Save, 
   Search, 
@@ -16,15 +14,16 @@ import {
   Edit2, 
   LayoutGrid,
   Lock,
-  Smartphone,
-  Server,
   RefreshCw,
   CheckCircle2,
-  AlertCircle,
-  Send
+  Send,
+  Database,
+  Activity,
+  Server
 } from 'lucide-react';
 import { MOCK_USERS, MOCK_TENANTS, sendMockEmail } from '../services/mockData';
 import { User, UserRole } from '../types';
+import pool from '../lib/db';
 
 const EMAIL_TEMPLATES = [
   { id: 'welcome', name: 'New User Welcome', subject: 'Welcome to Inala ERP', lastEdited: '2 days ago' },
@@ -48,7 +47,35 @@ export const Settings: React.FC = () => {
   // --- RENDERERS ---
 
   // 1. GENERAL SETTINGS
-  const GeneralSettings = () => (
+  const GeneralSettings = () => {
+    const [dbStatus, setDbStatus] = useState<'IDLE' | 'LOADING' | 'CONNECTED' | 'ERROR'>('IDLE');
+    const [dbData, setDbData] = useState<{ status: string; time: string } | null>(null);
+    const [dbError, setDbError] = useState('');
+
+    const checkDbStatus = async () => {
+        setDbStatus('LOADING');
+        try {
+            // Direct DB Call using @neondatabase/serverless
+            const result = await pool.query('SELECT NOW() as now');
+            const time = result.rows[0].now;
+
+            setDbStatus('CONNECTED');
+            setDbData({ status: 'connected', time: new Date(time).toLocaleString() });
+            setDbError('');
+            
+        } catch (error: any) {
+            console.error('Database connection error:', error);
+            setDbStatus('ERROR');
+            setDbError(error.message || 'Connection failed.');
+        }
+    };
+
+    // Auto-check on mount
+    useEffect(() => {
+        checkDbStatus();
+    }, []);
+
+    return (
     <div className="space-y-6 animate-fade-in">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
@@ -71,32 +98,81 @@ export const Settings: React.FC = () => {
                 </div>
             </Card>
             
-            <Card>
-                <h3 className="font-bold text-lg mb-4 text-slate-900 dark:text-white flex items-center gap-2">
-                    <Globe size={20} className="text-emerald-500"/> Localization
-                </h3>
-                <div className="space-y-4">
-                     <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Default Language</label>
-                        <select className="input-field">
-                            <option>English (UK)</option>
-                            <option>Portuguese (Mozambique)</option>
-                            <option>Zulu</option>
-                            <option>Xhosa</option>
-                            <option>Polish</option>
-                        </select>
+            <div className="space-y-6">
+                {/* Database Connection Widget */}
+                <Card className={`border-l-4 ${dbStatus === 'CONNECTED' ? 'border-emerald-500' : 'border-slate-300'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                        <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                            <Database size={20} className="text-indigo-500"/> Neon Database
+                        </h3>
+                        {dbStatus === 'CONNECTED' && <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold uppercase">Connected</span>}
+                        {dbStatus === 'ERROR' && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold uppercase">Error</span>}
+                        {dbStatus === 'LOADING' && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold uppercase">Connecting...</span>}
                     </div>
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Timezone</label>
-                        <select className="input-field">
-                            <option>(GMT+02:00) Johannesburg</option>
-                            <option>(GMT+02:00) Maputo</option>
-                            <option>(GMT+00:00) London</option>
-                            <option>(GMT-05:00) Eastern Time (US)</option>
-                        </select>
+                    
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between text-sm p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                             <div className="flex items-center gap-2">
+                                <Server size={16} className="text-slate-400"/>
+                                <span className="font-mono text-slate-600 dark:text-slate-400">Direct Browser Connection</span>
+                             </div>
+                             <div className={`w-2 h-2 rounded-full ${dbStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></div>
+                        </div>
+
+                        {dbStatus === 'CONNECTED' && dbData && (
+                            <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                                <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide mb-1">Server Response</p>
+                                <p className="text-sm font-mono text-slate-700 dark:text-slate-300">Status: <span className="font-bold text-emerald-600">{dbData.status}</span></p>
+                                <p className="text-sm font-mono text-slate-700 dark:text-slate-300">Time: {dbData.time}</p>
+                            </div>
+                        )}
+
+                        {dbStatus === 'ERROR' && (
+                            <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-lg border border-red-100 dark:border-red-900/30">
+                                <p className="text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wide mb-1">Connection Error</p>
+                                <p className="text-sm text-red-600 dark:text-red-300 break-words">{dbError}</p>
+                            </div>
+                        )}
+
+                        <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={checkDbStatus} 
+                            isLoading={dbStatus === 'LOADING'}
+                            className="w-full mt-2"
+                        >
+                            <RefreshCw size={14} className="mr-2"/> Retry Connection
+                        </Button>
                     </div>
-                </div>
-            </Card>
+                </Card>
+
+                <Card>
+                    <h3 className="font-bold text-lg mb-4 text-slate-900 dark:text-white flex items-center gap-2">
+                        <Globe size={20} className="text-emerald-500"/> Localization
+                    </h3>
+                    <div className="space-y-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Default Language</label>
+                            <select className="input-field">
+                                <option>English (UK)</option>
+                                <option>Portuguese (Mozambique)</option>
+                                <option>Zulu</option>
+                                <option>Xhosa</option>
+                                <option>Polish</option>
+                            </select>
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Timezone</label>
+                            <select className="input-field">
+                                <option>(GMT+02:00) Johannesburg</option>
+                                <option>(GMT+02:00) Maputo</option>
+                                <option>(GMT+00:00) London</option>
+                                <option>(GMT-05:00) Eastern Time (US)</option>
+                            </select>
+                        </div>
+                    </div>
+                </Card>
+            </div>
         </div>
         
         <div className="flex justify-end">
@@ -105,7 +181,7 @@ export const Settings: React.FC = () => {
              </Button>
         </div>
     </div>
-  );
+  )};
 
   // 2. USER MANAGEMENT
   const UserManagement = () => {
@@ -118,14 +194,14 @@ export const Settings: React.FC = () => {
       const [formName, setFormName] = useState('');
       const [formEmail, setFormEmail] = useState('');
       const [formRole, setFormRole] = useState<UserRole>(UserRole.CASHIER);
-      const [formTenants, setFormTenants] = useState<string[]>([]); // Multi-select mock
+      const [formTenantId, setFormTenantId] = useState<string>('GLOBAL');
 
       const handleEdit = (user: User) => {
           setEditingUser(user);
           setFormName(user.name);
           setFormEmail(user.email);
           setFormRole(user.role);
-          setFormTenants(user.tenantId === 'GLOBAL' ? [] : [user.tenantId]);
+          setFormTenantId(user.tenantId);
           setShowUserModal(true);
       };
 
@@ -134,8 +210,56 @@ export const Settings: React.FC = () => {
           setFormName('');
           setFormEmail('');
           setFormRole(UserRole.CASHIER);
-          setFormTenants([]);
+          setFormTenantId('GLOBAL');
           setShowUserModal(true);
+      };
+
+      const handleSaveUser = () => {
+          if (!formEmail || !formName) return;
+
+          if (editingUser) {
+              // Update existing user
+              setUsers(prev => prev.map(u => u.id === editingUser.id ? { 
+                  ...u, 
+                  name: formName, 
+                  email: formEmail, 
+                  role: formRole, 
+                  tenantId: formTenantId 
+              } : u));
+          } else {
+              // Create New User
+              const newUser: User = {
+                  id: `u_${Date.now()}`,
+                  name: formName,
+                  email: formEmail,
+                  role: formRole,
+                  tenantId: formTenantId,
+                  avatarUrl: `https://ui-avatars.com/api/?name=${formName}&background=random`
+              };
+              setUsers(prev => [...prev, newUser]);
+
+              // AUTOMATED EMAIL LOGIC
+              // Send invitation email
+              sendMockEmail({
+                  to: formEmail,
+                  subject: 'Welcome to Inala ERP - Action Required',
+                  body: `Hello ${formName},
+
+You have been invited to join the Inala ERP platform as a ${formRole.replace('_', ' ')}.
+
+Please accept this invitation and set up your password by clicking the link below:
+https://app.inala.holdings/setup?token=${Date.now()}&email=${encodeURIComponent(formEmail)}
+
+If you did not expect this invitation, please ignore this email.
+
+Best Regards,
+Inala ERP Team`
+              });
+
+              // Notification (Mock)
+              alert(`User created successfully! An invitation email has been sent to ${formEmail}.`);
+          }
+          setShowUserModal(false);
       };
 
       return (
@@ -238,7 +362,7 @@ export const Settings: React.FC = () => {
                         </div>
                         <div className="space-y-1.5">
                             <label className="text-sm font-semibold">Primary Assignment</label>
-                            <select className="input-field" disabled={formRole === UserRole.SUPER_ADMIN}>
+                            <select value={formTenantId} onChange={e => setFormTenantId(e.target.value)} className="input-field" disabled={formRole === UserRole.SUPER_ADMIN}>
                                 <option value="GLOBAL">Global (Super Admin)</option>
                                 {MOCK_TENANTS.map(t => (
                                     <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
@@ -249,7 +373,7 @@ export const Settings: React.FC = () => {
                     
                     <div className="pt-4 flex justify-end gap-2">
                         <Button variant="ghost" onClick={() => setShowUserModal(false)}>Cancel</Button>
-                        <Button onClick={() => setShowUserModal(false)}>Save User</Button>
+                        <Button onClick={handleSaveUser}>{editingUser ? 'Update User' : 'Save & Invite User'}</Button>
                     </div>
                 </div>
             </Modal>

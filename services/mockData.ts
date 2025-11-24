@@ -500,6 +500,17 @@ export const addExpense = (expense: Expense) => {
     MOCK_EXPENSES.unshift(expense);
 }
 
+export const addTenant = (tenant: Tenant) => {
+    MOCK_TENANTS.push(tenant);
+};
+
+export const updateTenant = (tenant: Tenant) => {
+    const index = MOCK_TENANTS.findIndex(t => t.id === tenant.id);
+    if (index !== -1) {
+        MOCK_TENANTS[index] = tenant;
+    }
+};
+
 // ... other mock data ...
 // 6. Loans
 export const MOCK_LOANS: Loan[] = [

@@ -1,16 +1,62 @@
 
-import React from 'react';
-import { MOCK_TENANTS, MOCK_STOKVEL_MEMBERS } from '../services/mockData';
-import { TenantType } from '../types';
+import React, { useState, useEffect } from 'react';
+import { MOCK_TENANTS, MOCK_STOKVEL_MEMBERS, addTenant } from '../services/mockData';
+import { TenantType, Tenant } from '../types';
 import { Button } from '../components/ui/Button';
-import { Plus, Users, ShieldCheck, Wallet, ArrowRight, Calendar, Star, Target } from 'lucide-react';
+import { Modal } from '../components/ui/Modal';
+import { Plus, Users, ShieldCheck, Wallet, ArrowRight, Calendar, Star, Target, CheckCircle2 } from 'lucide-react';
 
 interface StokvelsProps {
     onOpenModule?: (moduleId: string, tenantId: string) => void;
 }
 
 export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
-  const stokvels = MOCK_TENANTS.filter(t => t.type === TenantType.STOKVEL);
+  const [stokvels, setStokvels] = useState<Tenant[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  
+  // Form State
+  const [formData, setFormData] = useState<Partial<Tenant>>({
+      name: '',
+      type: TenantType.STOKVEL,
+      currency: 'ZAR',
+      primaryColor: '#0ea5e9',
+      subscriptionTier: 'BASIC',
+      isActive: true,
+      target: 50000
+  });
+
+  useEffect(() => {
+     setStokvels(MOCK_TENANTS.filter(t => t.type === TenantType.STOKVEL));
+  }, []);
+
+  const handleOpenAdd = () => {
+      setFormData({
+          name: '',
+          type: TenantType.STOKVEL,
+          currency: 'ZAR',
+          primaryColor: '#0ea5e9',
+          subscriptionTier: 'BASIC',
+          isActive: true,
+          target: 50000
+      });
+      setShowModal(true);
+  };
+
+  const handleSave = () => {
+      if (!formData.name) return;
+      
+      const newTenant: Tenant = {
+          ...formData,
+          id: `t_stok_${Date.now()}`,
+          logoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name || '')}&background=${formData.primaryColor?.replace('#', '')}&color=fff&size=128`
+      } as Tenant;
+
+      addTenant(newTenant);
+      setStokvels(prev => [...prev, newTenant]);
+      setShowModal(false);
+  };
+  
+  const colors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#1e293b'];
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -20,7 +66,7 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                 <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Stokvel Groups</h2>
                 <p className="text-slate-500 mt-2 text-base">Manage your cooperative savings groups, member rotations, and automated payouts.</p>
             </div>
-            <Button className="shadow-lg shadow-indigo-500/20">
+            <Button className="shadow-lg shadow-indigo-500/20" onClick={handleOpenAdd}>
                 <Plus size={18} className="mr-2" />
                 Register New Group
             </Button>
@@ -106,7 +152,10 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
             })}
             
             {/* Create New Card */}
-            <button className="relative group rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center text-center hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all duration-300 min-h-[420px]">
+            <button 
+                onClick={handleOpenAdd}
+                className="relative group rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center text-center hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all duration-300 min-h-[420px]"
+            >
                 <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/30 flex items-center justify-center mb-4 transition-colors">
                     <Plus size={32} className="text-slate-400 group-hover:text-indigo-500" />
                 </div>
@@ -114,6 +163,76 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                 <p className="text-sm text-slate-500 mt-2 max-w-xs">Create a new group, invite members, set targets and set up automated contribution tracking.</p>
             </button>
         </div>
+
+        {/* Create Modal */}
+        <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Start New Stokvel">
+            <div className="space-y-6 pt-2">
+                 {/* Branding Preview */}
+                 <div className="flex justify-center mb-6">
+                    <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl font-bold text-white shadow-lg transition-colors" style={{ backgroundColor: formData.primaryColor }}>
+                        {formData.name ? formData.name.charAt(0).toUpperCase() : <Users size={32} />}
+                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Stokvel Name</label>
+                    <input 
+                        type="text" 
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                        value={formData.name}
+                        onChange={e => setFormData({...formData, name: e.target.value})}
+                        placeholder="e.g. Sisonke Savings"
+                    />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Target Amount</label>
+                        <input 
+                            type="number" 
+                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                            value={formData.target}
+                            onChange={e => setFormData({...formData, target: Number(e.target.value)})}
+                        />
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Currency</label>
+                        <select 
+                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                            value={formData.currency}
+                            onChange={e => setFormData({...formData, currency: e.target.value})}
+                        >
+                            <option value="ZAR">ZAR (Rand)</option>
+                            <option value="USD">USD (Dollar)</option>
+                            <option value="MZN">MZN (Metical)</option>
+                        </select>
+                     </div>
+                </div>
+
+                <div className="space-y-3">
+                    <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Theme Color</label>
+                    <div className="flex flex-wrap gap-3">
+                        {colors.map(color => (
+                            <button
+                                key={color}
+                                onClick={() => setFormData({...formData, primaryColor: color})}
+                                className={`w-10 h-10 rounded-full transition-transform hover:scale-110 flex items-center justify-center ${formData.primaryColor === color ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-900 scale-110' : ''}`}
+                                style={{ backgroundColor: color }}
+                            >
+                                {formData.primaryColor === color && <CheckCircle2 size={16} className="text-white" />}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800 mt-2">
+                    <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+                    <Button onClick={handleSave} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                        Create Group
+                    </Button>
+                </div>
+            </div>
+        </Modal>
     </div>
   );
 };
