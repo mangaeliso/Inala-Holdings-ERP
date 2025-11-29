@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { getProducts, getTenants, getCustomers, addTransaction, addCustomer } from '../services/firestore';
 import { Product, PaymentMethod, TransactionType, Customer, Tenant } from '../types';
@@ -24,6 +25,9 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [paymentMode, setPaymentMode] = useState<PaymentMethod | null>(null);
   
+  // Settings
+  const [includeVat, setIncludeVat] = useState(true);
+
   // Modals
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -112,7 +116,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.product.price * item.qty), 0);
-  const tax = subtotal * 0.15; // 15% VAT
+  const tax = includeVat ? subtotal * 0.15 : 0; // 15% VAT optional
   const total = subtotal + tax;
 
   const handlePaymentMethodSelect = (method: PaymentMethod) => {
@@ -386,8 +390,17 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
                <span>Subtotal</span>
                <span>R {subtotal.toFixed(2)}</span>
              </div>
-             <div className="flex justify-between text-xs text-slate-500 font-medium">
-               <span>VAT (15%)</span>
+             <div className="flex justify-between text-xs text-slate-500 font-medium items-center">
+               <div className="flex items-center gap-2">
+                   <span>VAT (15%)</span>
+                   <button 
+                       onClick={() => setIncludeVat(!includeVat)}
+                       className={`w-7 h-4 rounded-full p-0.5 transition-colors ${includeVat ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                       title="Toggle VAT"
+                   >
+                       <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${includeVat ? 'translate-x-3' : 'translate-x-0'}`} />
+                   </button>
+               </div>
                <span>R {tax.toFixed(2)}</span>
              </div>
              <div className="flex justify-between items-baseline pt-2 border-t border-dashed border-slate-200 dark:border-slate-700">

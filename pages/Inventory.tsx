@@ -18,9 +18,9 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [refresh, setRefresh] = useState(0); 
 
-  // Form State
+  // Form State - Removed 'cost' from active state tracking for UI
   const [formData, setFormData] = useState<Partial<Product>>({
-      name: '', sku: '', category: '', subcategory: '', price: 0, cost: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit'
+      name: '', sku: '', category: '', subcategory: '', price: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit'
   });
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
   const handleAddNew = () => {
       setEditingProduct(null);
       setFormData({
-        name: '', sku: '', category: 'General', subcategory: '', price: 0, cost: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit', tenantId: tenantId || ''
+        name: '', sku: '', category: 'General', subcategory: '', price: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit', tenantId: tenantId || ''
       });
       setShowModal(true);
   };
@@ -60,6 +60,7 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
       } else {
           await addProduct({ 
               ...formData, 
+              cost: 0, // Default cost to 0 internally
               id: `p_${Date.now()}`, 
               tenantId: tenantId!, 
               imageUrl: '' 

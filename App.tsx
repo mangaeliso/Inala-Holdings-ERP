@@ -14,7 +14,7 @@ import { Inbox } from './pages/Inbox';
 import { UIProvider, useUI } from './context/UIContext';
 import { ToastContainer } from './components/ui/ToastContainer';
 import { INITIAL_USERS, INALA_HOLDINGS_TENANT } from './services/mockData';
-import { migrateTopLevelToButchery } from './services/firestore';
+import { ensureCurrentCycleData } from './services/firestore';
 import { Tenant, User } from './types';
 
 // Wrapper component to use hooks inside
@@ -27,11 +27,11 @@ const AppContent: React.FC = () => {
   const { isDarkMode, toggleTheme } = useUI();
 
   useEffect(() => {
-    // Run Migration / Seeding Logic on startup
+    // Run DB Checks on startup
     const initDB = async () => {
-        // This attempts to move legacy data to the new structure
-        // If no data exists, it will fall back to seeding from mockData
-        await migrateTopLevelToButchery();
+        // Automatically populates Firestore with current cycle data if missing
+        // ensuring the dashboard always shows relevant info
+        await ensureCurrentCycleData();
     };
     initDB();
   }, []);

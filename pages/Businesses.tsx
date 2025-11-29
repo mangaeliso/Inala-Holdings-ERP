@@ -4,7 +4,7 @@ import { getTenants, addTenant, updateTenant } from '../services/firestore';
 import { TenantType, Tenant } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Plus, MoreHorizontal, ShoppingCart, LayoutDashboard, ArrowUpRight, Store, MapPin, Edit2, CheckCircle2 } from 'lucide-react';
+import { Plus, LayoutDashboard, ArrowUpRight, Store, MapPin, Edit2, CheckCircle2 } from 'lucide-react';
 
 interface BusinessesProps {
     onOpenModule: (moduleId: string, tenantId: string) => void;
@@ -166,20 +166,13 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                         </div>
                     </div>
 
-                    {/* Actions */}
-                    <div className="grid grid-cols-2 gap-3 mt-auto">
+                    {/* Actions - Modified to just dashboard full width */}
+                    <div className="mt-auto">
                          <Button 
-                            className="flex items-center justify-center gap-2 bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg shadow-slate-900/10 h-11 transition-all active:scale-95"
+                            className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200 shadow-lg shadow-slate-900/10 h-11 transition-all active:scale-95"
                             onClick={() => onOpenModule('business-dashboard', biz.id)}
                          >
-                            <ShoppingCart size={18} /> <span className="font-bold">Open Terminal</span>
-                         </Button>
-                         <Button 
-                            variant="outline" 
-                            className="flex items-center justify-center gap-2 h-11 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:hover:bg-slate-800 transition-all active:scale-95"
-                            onClick={() => onOpenModule('business-dashboard', biz.id)}
-                         >
-                            <LayoutDashboard size={18} /> <span className="font-medium">Dashboard</span>
+                            <LayoutDashboard size={18} /> <span className="font-bold">Dashboard</span>
                          </Button>
                     </div>
                 </div>
@@ -245,15 +238,22 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                             value={formData.category || 'General'}
                             onChange={e => setFormData({...formData, category: e.target.value})}
                         >
-                            <option value="General">General</option>
-                            <option value="Butchery">Butchery</option>
-                            <option value="IT Services">IT Services</option>
-                            <option value="Barber Shop">Barber Shop</option>
-                            <option value="Agriculture">Agriculture</option>
-                            <option value="Logistics">Logistics</option>
-                            <option value="Retail">Retail</option>
-                            <option value="Restaurant">Restaurant</option>
-                            <option value="Healthcare">Healthcare</option>
+                            <option value="General">General Business</option>
+                            <option value="Butchery">Butchery / Meat Market</option>
+                            <option value="Barber">Barber Shop / Salon</option>
+                            <option value="IT">IT & Electronics</option>
+                            <option value="Services">Professional Services</option>
+                            <option value="Agriculture">Agriculture / Farming</option>
+                            <option value="Retail">Retail Store</option>
+                            <option value="Restaurant">Restaurant / Catering</option>
+                            <option value="Logistics">Logistics / Transport</option>
+                            <option value="Healthcare">Healthcare / Pharmacy</option>
+                            <option value="Education">Education / Training</option>
+                            <option value="Construction">Construction / Hardware</option>
+                            <option value="Automotive">Automotive / Spares</option>
+                            <option value="Fashion">Fashion / Clothing</option>
+                            <option value="Entertainment">Entertainment / Events</option>
+                            <option value="Real Estate">Real Estate</option>
                             <option value="Other">Other</option>
                         </select>
                      </div>

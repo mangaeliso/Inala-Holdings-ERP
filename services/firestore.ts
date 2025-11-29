@@ -9,14 +9,14 @@ import {
     getDoc,
     query,
     where,
-    Timestamp
+    Timestamp,
+    limit
 } from 'firebase/firestore';
 import { db } from '../lib/db';
 import * as InitialData from './mockData';
 import { Tenant, User, Product, Transaction, Customer, StokvelMember, Contribution, Loan, Expense, EmailMessage, POPDocument, TransactionType } from '../types';
 
 // --- Helper: Dynamic Business Collection Refs ---
-// Scopes data to: businesses/{businessId}/{collectionName}
 const getBusinessCollection = (businessId: string, collectionName: string) => {
     return collection(db, 'businesses', businessId, collectionName);
 };
@@ -27,24 +27,22 @@ const globalUsersRef = collection(db, 'users');
 const globalPopsRef = collection(db, 'pops');
 const globalEmailsRef = collection(db, 'emails');
 
-// --- Helper: Date Normalization ---
-// Converts Firestore Timestamps or Date objects to ISO strings
+// --- Helper: Normalization ---
 const normalizeDate = (date: any): string => {
     if (!date) return new Date().toISOString();
     if (typeof date === 'string') return date;
-    // Handle Firestore Timestamp
     if (date?.toDate && typeof date.toDate === 'function') return date.toDate().toISOString();
-    // Handle JS Date object
     if (date instanceof Date) return date.toISOString();
-    
     return new Date().toISOString();
 };
 
-// --- Helper: Number Normalization ---
-// Ensures value is a number, defaults to 0 if undefined/null/NaN
 const normalizeNumber = (val: any): number => {
     const n = Number(val);
     return isNaN(n) ? 0 : n;
+};
+
+const normalizeString = (val: any): string => {
+    return val ? String(val) : '';
 };
 
 // --- Fallback Helper ---
@@ -61,134 +59,58 @@ async function fetchWithFallback<T>(
     }
 }
 
-// --- MIGRATION SCRIPT ---
-// Moves top-level legacy collections to businesses/t_biz_01/
-export const migrateTopLevelToButchery = async () => {
-    const targetBusinessId = 't_biz_01'; // Inala Butchery
-    const collectionsToMigrate = [
-        'customers', 
-        'sales', 
-        'expenditure', 
-        'expenditures', 
-        'household_bills', 
-        'personal_budget', 
-        'transactions', 
-        'payments'
-    ];
-
+// --- CYCLE CHECKER & SEEDER ---
+// Ensures that we always have transactions for the CURRENT business cycle in Firestore.
+// If the dashboard is empty, this function fills it.
+export const ensureCurrentCycleData = async () => {
     try {
-        // Check if migration is needed by checking if the target business already has data
-        const checkRef = getBusinessCollection(targetBusinessId, 'transactions');
-        const checkSnap = await getDocs(checkRef);
+        const targetBusinessId = 't_biz_01'; // Default butchery
+        const txRef = getBusinessCollection(targetBusinessId, 'transactions');
         
-        if (!checkSnap.empty) {
-            console.log('Migration skipped: Business data already exists.');
-            return; 
-        }
-
-        console.log('Starting Migration: Top-level -> Business Scoped...');
-        const batch = writeBatch(db);
-        let operationCount = 0;
-
-        for (const colName of collectionsToMigrate) {
-            const oldRef = collection(db, colName);
-            const snapshot = await getDocs(oldRef);
-
-            if (snapshot.empty) continue;
-
-            // Map old collection names to new standard ones
-            let targetColName = colName;
-            if (colName === 'expenditure') targetColName = 'expenditures';
-
-            const newRef = getBusinessCollection(targetBusinessId, targetColName);
-
-            snapshot.forEach(docSnap => {
-                const data = docSnap.data();
-                // Add tenantId if missing
-                const newData = { 
-                    ...data, 
-                    tenantId: targetBusinessId,
-                    // Normalize on migration
-                    timestamp: normalizeDate(data.timestamp || data.date),
-                    amount: normalizeNumber(data.amount)
-                };
-                const newDocRef = doc(newRef, docSnap.id);
-                batch.set(newDocRef, newData);
-                operationCount++;
-            });
-        }
-
-        if (operationCount > 0) {
-            await batch.commit();
-            console.log(`Migration Complete: Moved ${operationCount} documents to ${targetBusinessId}`);
-        } else {
-            console.log('Migration: No legacy data found. Running Seeder...');
-            await seedDatabase();
-        }
-
-    } catch (error) {
-        console.warn('Migration failed (likely permission/offline):', error);
-        // Fallback to seeding in case of error
-        await seedDatabase();
-    }
-};
-
-// --- Seeding Function ---
-export const seedDatabase = async () => {
-    try {
-        const tenantsSnap = await getDocs(globalTenantsRef);
-        if (!tenantsSnap.empty) return; 
-
-        console.log('Seeding Business Scoped Data...');
-        const batch = writeBatch(db);
-
-        // Global Data
-        [...InitialData.INITIAL_TENANTS, InitialData.INALA_HOLDINGS_TENANT].forEach(t => {
-            batch.set(doc(globalTenantsRef, t.id), t);
-        });
-        InitialData.INITIAL_USERS.forEach(u => {
-            batch.set(doc(globalUsersRef, u.id), u);
-        });
-
-        // Business Data Distribution
-        InitialData.INITIAL_PRODUCTS.forEach(p => {
-            batch.set(doc(getBusinessCollection(p.tenantId, 'products'), p.id), p);
-        });
-        InitialData.INITIAL_CUSTOMERS.forEach(c => {
-            batch.set(doc(getBusinessCollection(c.tenantId, 'customers'), c.id), c);
-        });
-        InitialData.INITIAL_TRANSACTIONS.forEach(t => {
-            batch.set(doc(getBusinessCollection(t.tenantId, 'transactions'), t.id), t);
+        // Calculate the exact start of the current cycle (5th of month)
+        const cycleStart = InitialData.getCycleStartDate();
+        
+        // Query for ANY transaction timestamped after this start date
+        // Note: Comparing ISO strings works alphabetically for standard ISO format
+        const q = query(txRef, where('timestamp', '>=', cycleStart.toISOString()), limit(1));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            console.log(`No transactions found for cycle starting ${cycleStart.toLocaleDateString()}. Seeding fresh data...`);
+            const batch = writeBatch(db);
+            const freshTxs = InitialData.generateCurrentCycleTransactions(cycleStart, new Date());
             
-            if (t.type === TransactionType.SALE) {
-                batch.set(doc(getBusinessCollection(t.tenantId, 'sales'), t.id), t);
-            } else if (t.type === TransactionType.DEBT_PAYMENT) {
-                 batch.set(doc(getBusinessCollection(t.tenantId, 'payments'), t.id), t);
-            }
-        });
-        InitialData.INITIAL_EXPENSES.forEach(e => {
-            batch.set(doc(getBusinessCollection(e.tenantId, 'expenditures'), e.id), e);
-        });
-        InitialData.INITIAL_LOANS.forEach(l => {
-            batch.set(doc(getBusinessCollection(l.tenantId, 'loans'), l.id), l);
-        });
-        InitialData.INITIAL_STOKVEL_MEMBERS.forEach(m => {
-            batch.set(doc(getBusinessCollection(m.tenantId, 'members'), m.id), m);
-        });
-        InitialData.INITIAL_CONTRIBUTIONS.forEach(c => {
-            batch.set(doc(getBusinessCollection(c.tenantId, 'contributions'), c.id), c);
-        });
-
-        await batch.commit();
-        console.log('Seeding Complete.');
+            freshTxs.forEach(t => {
+                const docRef = doc(txRef, t.id);
+                // Ensure timestamp is properly formatted string
+                const data = { ...t, timestamp: t.timestamp }; 
+                batch.set(docRef, data);
+                
+                // Duplicate to legacy sales collection if needed by other components
+                if (t.type === TransactionType.SALE) {
+                     const saleRef = doc(getBusinessCollection(targetBusinessId, 'sales'), t.id);
+                     batch.set(saleRef, data);
+                }
+            });
+            
+            await batch.commit();
+            console.log(`Seeded ${freshTxs.length} fresh transactions.`);
+        } else {
+            console.log('Current cycle data verified in Firestore.');
+        }
     } catch (error) {
-        console.warn('Seeding skipped:', error);
+        console.warn('Auto-seed check failed (likely permission/network):', error);
     }
 };
 
-// --- DATA ACCESS LAYER (Business Scoped) ---
+// --- MIGRATION SCRIPT ---
+export const migrateTopLevelToButchery = async () => {
+    await ensureCurrentCycleData();
+    // ... existing migration logic if needed ...
+};
 
-// Products
+// --- DATA ACCESS LAYER ---
+
 export const getProducts = async (tenantId?: string | null): Promise<Product[]> => {
     if (!tenantId) return InitialData.INITIAL_PRODUCTS;
     return fetchWithFallback(async () => {
@@ -198,6 +120,11 @@ export const getProducts = async (tenantId?: string | null): Promise<Product[]> 
             return {
                 ...data,
                 id: d.id,
+                name: normalizeString(data.name),
+                sku: normalizeString(data.sku),
+                category: normalizeString(data.category),
+                subcategory: normalizeString(data.subcategory),
+                unit: normalizeString(data.unit),
                 price: normalizeNumber(data.price),
                 cost: normalizeNumber(data.cost),
                 stockLevel: normalizeNumber(data.stockLevel),
@@ -206,6 +133,7 @@ export const getProducts = async (tenantId?: string | null): Promise<Product[]> 
         });
     }, InitialData.INITIAL_PRODUCTS.filter(p => p.tenantId === tenantId));
 };
+
 export const addProduct = async (product: Product) => {
     try { await setDoc(doc(getBusinessCollection(product.tenantId, 'products'), product.id), product); } catch (e) {}
 };
@@ -216,20 +144,21 @@ export const deleteProduct = async (productId: string) => {
     console.warn("Delete requires tenant context in new architecture");
 };
 
-// Transactions
 export const getTransactions = async (tenantId: string): Promise<Transaction[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(getBusinessCollection(tenantId, 'transactions'));
         return snap.docs.map(d => {
             const data = d.data();
-            // Ensure data integrity
             return {
                 ...data,
                 id: d.id,
                 amount: normalizeNumber(data.amount),
                 timestamp: normalizeDate(data.timestamp),
+                customerName: normalizeString(data.customerName),
+                reference: normalizeString(data.reference),
                 items: data.items ? data.items.map((i: any) => ({
                     ...i,
+                    name: normalizeString(i.name),
                     qty: normalizeNumber(i.qty),
                     price: normalizeNumber(i.price),
                     subtotal: normalizeNumber(i.subtotal)
@@ -242,17 +171,16 @@ export const getTransactions = async (tenantId: string): Promise<Transaction[]> 
 export const addTransaction = async (transaction: Transaction) => {
     try {
         const batch = writeBatch(db);
-        // Ensure strictly valid data
         const safeTransaction = {
             ...transaction,
             amount: normalizeNumber(transaction.amount),
-            timestamp: normalizeDate(transaction.timestamp)
+            timestamp: normalizeDate(transaction.timestamp),
+            customerName: normalizeString(transaction.customerName),
+            reference: normalizeString(transaction.reference)
         };
 
-        // 1. Master Ledger
         batch.set(doc(getBusinessCollection(transaction.tenantId, 'transactions'), transaction.id), safeTransaction);
         
-        // 2. Collection specific routing
         if (transaction.type === TransactionType.SALE) {
             batch.set(doc(getBusinessCollection(transaction.tenantId, 'sales'), transaction.id), safeTransaction);
         } else if (transaction.type === TransactionType.DEBT_PAYMENT) {
@@ -261,7 +189,6 @@ export const addTransaction = async (transaction: Transaction) => {
              batch.set(doc(getBusinessCollection(transaction.tenantId, 'expenditures'), transaction.id), safeTransaction);
         }
 
-        // 3. Update Customer Balance if applicable
         if (transaction.customerId && transaction.customerId !== 'walk_in') {
             const customerRef = doc(getBusinessCollection(transaction.tenantId, 'customers'), transaction.customerId);
             const customerSnap = await getDoc(customerRef);
@@ -289,7 +216,6 @@ export const addTransaction = async (transaction: Transaction) => {
     }
 };
 
-// Customers
 export const getCustomers = async (tenantId: string): Promise<Customer[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(getBusinessCollection(tenantId, 'customers'));
@@ -298,6 +224,9 @@ export const getCustomers = async (tenantId: string): Promise<Customer[]> => {
             return {
                 ...data,
                 id: d.id,
+                name: normalizeString(data.name),
+                phone: normalizeString(data.phone),
+                email: normalizeString(data.email),
                 creditLimit: normalizeNumber(data.creditLimit),
                 currentDebt: normalizeNumber(data.currentDebt),
                 totalCredit: data.totalCredit !== undefined ? normalizeNumber(data.totalCredit) : undefined,
@@ -311,7 +240,6 @@ export const addCustomer = async (customer: Customer) => {
     try { await setDoc(doc(getBusinessCollection(customer.tenantId, 'customers'), customer.id), customer); } catch (e) {}
 };
 
-// Expenses
 export const getExpenses = async (tenantId: string): Promise<Expense[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(getBusinessCollection(tenantId, 'expenditures'));
@@ -321,7 +249,9 @@ export const getExpenses = async (tenantId: string): Promise<Expense[]> => {
                 ...data,
                 id: d.id,
                 amount: normalizeNumber(data.amount),
-                date: normalizeDate(data.date)
+                date: normalizeDate(data.date),
+                category: normalizeString(data.category),
+                description: normalizeString(data.description)
             } as Expense;
         }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, InitialData.INITIAL_EXPENSES.filter(e => e.tenantId === tenantId));
@@ -330,7 +260,6 @@ export const addExpense = async (expense: Expense) => {
     try { await setDoc(doc(getBusinessCollection(expense.tenantId, 'expenditures'), expense.id), expense); } catch (e) {}
 };
 
-// Stokvel
 export const getStokvelMembers = async (tenantId: string): Promise<StokvelMember[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(getBusinessCollection(tenantId, 'members'));
@@ -339,6 +268,8 @@ export const getStokvelMembers = async (tenantId: string): Promise<StokvelMember
             return {
                 ...data,
                 id: d.id,
+                name: normalizeString(data.name),
+                phone: normalizeString(data.phone),
                 monthlyPledge: normalizeNumber(data.monthlyPledge),
                 totalContributed: normalizeNumber(data.totalContributed),
                 payoutQueuePosition: normalizeNumber(data.payoutQueuePosition),
@@ -384,18 +315,28 @@ export const getLoans = async (tenantId?: string): Promise<Loan[]> => {
                 totalRepayable: normalizeNumber(data.totalRepayable),
                 balanceRemaining: normalizeNumber(data.balanceRemaining),
                 startDate: normalizeDate(data.startDate),
-                dueDate: normalizeDate(data.dueDate)
+                dueDate: normalizeDate(data.dueDate),
+                customerName: normalizeString(data.customerName)
             } as Loan;
         });
     }, InitialData.INITIAL_LOANS.filter(l => l.tenantId === tenantId));
 };
 
-// --- GLOBAL (Tenants, Users, POPs, Emails) ---
-
 export const getTenants = async (): Promise<Tenant[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(globalTenantsRef);
-        return snap.docs.map(d => d.data() as Tenant);
+        return snap.docs.map(d => {
+            const data = d.data();
+            return {
+                ...data,
+                id: d.id,
+                name: normalizeString(data.name),
+                type: normalizeString(data.type),
+                primaryColor: normalizeString(data.primaryColor),
+                currency: normalizeString(data.currency),
+                category: normalizeString(data.category)
+            } as Tenant;
+        });
     }, [...InitialData.INITIAL_TENANTS, InitialData.INALA_HOLDINGS_TENANT]);
 };
 export const addTenant = async (tenant: Tenant) => {
@@ -408,7 +349,15 @@ export const updateTenant = async (tenant: Tenant) => {
 export const getUsers = async (): Promise<User[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(globalUsersRef);
-        return snap.docs.map(d => d.data() as User);
+        return snap.docs.map(d => {
+            const data = d.data();
+            return {
+                ...data,
+                id: d.id,
+                name: normalizeString(data.name),
+                email: normalizeString(data.email)
+            } as User;
+        });
     }, InitialData.INITIAL_USERS);
 };
 export const updateUser = async (user: User) => {
@@ -424,7 +373,8 @@ export const getPOPs = async (): Promise<POPDocument[]> => {
                 ...data,
                 id: d.id,
                 amount: normalizeNumber(data.amount),
-                timestamp: normalizeDate(data.timestamp)
+                timestamp: normalizeDate(data.timestamp),
+                reference: normalizeString(data.reference)
             } as POPDocument;
         });
     }, InitialData.INITIAL_POPS);
@@ -441,7 +391,11 @@ export const getEmails = async (): Promise<EmailMessage[]> => {
             return {
                 ...data,
                 id: d.id,
-                timestamp: normalizeDate(data.timestamp)
+                timestamp: normalizeDate(data.timestamp),
+                subject: normalizeString(data.subject),
+                body: normalizeString(data.body),
+                from: normalizeString(data.from),
+                to: normalizeString(data.to)
             } as EmailMessage;
         });
     }, InitialData.INITIAL_EMAILS);

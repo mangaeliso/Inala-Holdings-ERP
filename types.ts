@@ -1,4 +1,5 @@
 
+
 // Enums for standardizing statuses and roles
 export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
@@ -66,6 +67,7 @@ export interface Tenant {
   subscriptionTier: 'BASIC' | 'PRO' | 'ENTERPRISE';
   isActive: boolean;
   target?: number; // Financial target for the stokvel
+  category?: string; // Business category
 }
 
 export interface Branch {
