@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { MOCK_USERS, MOCK_TENANTS, INALA_HOLDINGS_TENANT } from '../services/mockData';
+import { INALA_HOLDINGS_TENANT } from '../services/mockData';
+import { getUsers, getTenants } from '../services/firestore';
 import { User, Tenant } from '../types';
 import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { ArrowRight, Lock, Mail, ShieldCheck, Building2, UserCircle } from 'lucide-react';
+import { ArrowRight, Lock, Mail, ShieldCheck, Building2 } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (user: User, tenant: Tenant) => void;
@@ -14,27 +14,62 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleManualLogin = (e: React.FormEvent) => {
+  const handleManualLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate network delay
-    setTimeout(() => {
+    try {
+        const users = await getUsers();
+        // Simple mock authentication by email matching
+        const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+        
+        if (user) {
+             let tenant: Tenant | undefined;
+             if (user.tenantId === 'GLOBAL') {
+                 tenant = INALA_HOLDINGS_TENANT;
+             } else {
+                 const tenants = await getTenants();
+                 tenant = tenants.find(t => t.id === user.tenantId);
+             }
+
+             if (tenant) {
+                 onLogin(user, tenant);
+             } else {
+                 alert('Tenant not found');
+             }
+        } else {
+            // Fallback for demo if no email matches, log in as super admin
+            onLogin(users[0], INALA_HOLDINGS_TENANT);
+        }
+    } catch (error) {
+        console.error(error);
+        alert('Login failed');
+    } finally {
         setIsLoading(false);
-        // Default to super admin for manual for now
-        onLogin(MOCK_USERS[0], INALA_HOLDINGS_TENANT);
-    }, 1000);
+    }
   };
 
-  const handleQuickLogin = (userIndex: number) => {
-    const user = MOCK_USERS[userIndex];
-    let tenant = MOCK_TENANTS.find(t => t.id === user.tenantId);
-    
-    if (user.tenantId === 'GLOBAL') {
-        tenant = INALA_HOLDINGS_TENANT;
-    }
+  const handleQuickLogin = async (index: number) => {
+    setIsLoading(true);
+    try {
+        const users = await getUsers();
+        // Safe access
+        if (users.length <= index) return;
+        
+        const user = users[index];
+        let tenant: Tenant | undefined;
+        
+        if (user.tenantId === 'GLOBAL') {
+            tenant = INALA_HOLDINGS_TENANT;
+        } else {
+            const tenants = await getTenants();
+            tenant = tenants.find(t => t.id === user.tenantId);
+        }
 
-    if (user && tenant) {
-        onLogin(user, tenant);
+        if (user && tenant) {
+            onLogin(user, tenant);
+        }
+    } finally {
+        setIsLoading(false);
     }
   };
 

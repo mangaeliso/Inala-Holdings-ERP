@@ -1,10 +1,9 @@
-
-import React, { useState } from 'react';
-import { MOCK_EXPENSES, MOCK_TRANSACTIONS, addExpense } from '../services/mockData';
+import React, { useState, useEffect } from 'react';
+import { getExpenses, getTransactions, addExpense } from '../services/firestore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Expense, TransactionType } from '../types';
+import { Expense, TransactionType, Transaction } from '../types';
 import { Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Tag } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -14,6 +13,9 @@ interface ExpensesProps {
 
 export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
   const [showModal, setShowModal] = useState(false);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
@@ -21,17 +23,24 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
     date: new Date().toISOString().split('T')[0]
   });
 
-  const expenses = MOCK_EXPENSES.filter(e => e.tenantId === tenantId);
-  const transactions = MOCK_TRANSACTIONS.filter(t => t.tenantId === tenantId && t.type === TransactionType.SALE);
+  useEffect(() => {
+    const fetchData = async () => {
+        const e = await getExpenses(tenantId);
+        setExpenses(e);
+        const t = await getTransactions(tenantId);
+        setTransactions(t.filter(tx => tx.type === TransactionType.SALE));
+    };
+    fetchData();
+  }, [tenantId]);
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const totalRevenue = transactions.reduce((sum, t) => sum + t.amount, 0);
   const netProfit = totalRevenue - totalExpenses;
 
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!formData.description || !formData.amount) return;
     
-    addExpense({
+    const newExpense: Expense = {
       id: `exp_${Date.now()}`,
       tenantId,
       description: formData.description,
@@ -39,7 +48,11 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
       category: formData.category,
       date: formData.date,
       status: 'PAID'
-    });
+    };
+
+    await addExpense(newExpense);
+    setExpenses(prev => [...prev, newExpense].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    
     setShowModal(false);
     setFormData({ description: '', amount: '', category: 'Rent', date: new Date().toISOString().split('T')[0] });
   };

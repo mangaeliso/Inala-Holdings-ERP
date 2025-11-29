@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { MOCK_TENANTS } from '../services/mockData';
+import { INITIAL_TENANTS } from '../services/mockData';
 import { POS } from './POS';
 import { Inventory } from './Inventory';
 import { Reports } from './Reports';
 import { Expenses } from './Expenses';
+import { Customers } from './Customers';
 import { 
   ShoppingCart, 
   Package, 
   BarChart2, 
   ArrowLeft,
-  DollarSign
+  DollarSign,
+  Users
 } from 'lucide-react';
 
 interface BusinessDashboardProps {
@@ -20,12 +22,13 @@ interface BusinessDashboardProps {
 
 export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, onBack, initialTab = 'pos' }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
-  const tenant = MOCK_TENANTS.find(t => t.id === tenantId);
+  const tenant = INITIAL_TENANTS.find(t => t.id === tenantId);
 
   if (!tenant) return <div>Business not found</div>;
 
   const tabs = [
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart },
+    { id: 'customers', label: 'Customers', icon: Users },
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'expenses', label: 'Expenses', icon: DollarSign },
     { id: 'reports', label: 'Reports', icon: BarChart2 },
@@ -78,6 +81,7 @@ export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, 
         <div className="flex-1 overflow-hidden relative">
             <div className="absolute inset-0 overflow-hidden">
                 {activeTab === 'pos' && <div className="h-full p-4 md:p-6 overflow-hidden"><POS tenantId={tenantId} /></div>}
+                {activeTab === 'customers' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Customers tenantId={tenantId} /></div>}
                 {activeTab === 'inventory' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Inventory tenantId={tenantId} /></div>}
                 {activeTab === 'reports' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Reports tenantId={tenantId} /></div>}
                 {activeTab === 'expenses' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Expenses tenantId={tenantId} /></div>}

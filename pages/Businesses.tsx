@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { MOCK_TENANTS, addTenant, updateTenant } from '../services/mockData';
+import { getTenants, addTenant, updateTenant } from '../services/firestore';
 import { TenantType, Tenant } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -14,6 +14,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [refresh, setRefresh] = useState(0);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Tenant>>({
@@ -23,13 +24,18 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
       primaryColor: '#6366f1',
       subscriptionTier: 'BASIC',
       isActive: true,
-      logoUrl: ''
+      logoUrl: '',
+      category: 'General'
   });
 
   useEffect(() => {
     // Load non-global tenants
-    setTenants(MOCK_TENANTS.filter(t => (t.type === TenantType.BUSINESS || t.type === TenantType.LENDING) && t.id !== 'global'));
-  }, []);
+    const load = async () => {
+        const t = await getTenants();
+        setTenants(t.filter(t => (t.type === TenantType.BUSINESS || t.type === TenantType.LENDING) && t.id !== 'global'));
+    };
+    load();
+  }, [refresh]);
 
   const handleOpenAdd = () => {
       setEditingTenant(null);
@@ -40,7 +46,8 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
           primaryColor: '#6366f1',
           subscriptionTier: 'BASIC',
           isActive: true,
-          logoUrl: ''
+          logoUrl: '',
+          category: 'General'
       });
       setShowModal(true);
   };
@@ -51,7 +58,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
       setShowModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
       if (!formData.name) return;
       
       const newTenantData: Tenant = {
@@ -61,13 +68,12 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
       } as Tenant;
 
       if (editingTenant) {
-          updateTenant(newTenantData);
-          setTenants(prev => prev.map(t => t.id === newTenantData.id ? newTenantData : t));
+          await updateTenant(newTenantData);
       } else {
-          addTenant(newTenantData);
-          setTenants(prev => [...prev, newTenantData]);
+          await addTenant(newTenantData);
       }
       setShowModal(false);
+      setRefresh(prev => prev + 1);
   };
 
   const colors = ['#6366f1', '#ec4899', '#0ea5e9', '#22c55e', '#eab308', '#f97316', '#ef4444', '#0f172a'];
@@ -115,7 +121,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                                      {/* Badges */}
                                     <div className="flex flex-wrap items-center gap-2 mt-2">
                                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${biz.type === TenantType.LENDING ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
-                                            {biz.type === TenantType.LENDING ? 'Lender' : 'Business'}
+                                            {biz.type === TenantType.LENDING ? 'Lender' : (biz.category || 'Business')}
                                         </span>
                                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
                                             {biz.currency}
@@ -233,6 +239,28 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                         </select>
                      </div>
                      <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Category</label>
+                        <select 
+                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                            value={formData.category || 'General'}
+                            onChange={e => setFormData({...formData, category: e.target.value})}
+                        >
+                            <option value="General">General</option>
+                            <option value="Butchery">Butchery</option>
+                            <option value="IT Services">IT Services</option>
+                            <option value="Barber Shop">Barber Shop</option>
+                            <option value="Agriculture">Agriculture</option>
+                            <option value="Logistics">Logistics</option>
+                            <option value="Retail">Retail</option>
+                            <option value="Restaurant">Restaurant</option>
+                            <option value="Healthcare">Healthcare</option>
+                            <option value="Other">Other</option>
+                        </select>
+                     </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Currency</label>
                         <select 
                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -243,6 +271,18 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                             <option value="USD">USD (Dollar)</option>
                             <option value="MZN">MZN (Metical)</option>
                             <option value="GBP">GBP (Pound)</option>
+                        </select>
+                     </div>
+                     <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Plan Tier</label>
+                        <select 
+                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                            value={formData.subscriptionTier}
+                            onChange={e => setFormData({...formData, subscriptionTier: e.target.value as any})}
+                        >
+                            <option value="BASIC">Basic</option>
+                            <option value="PRO">Pro</option>
+                            <option value="ENTERPRISE">Enterprise</option>
                         </select>
                      </div>
                 </div>
@@ -261,32 +301,6 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                             </button>
                         ))}
                     </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                     <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Plan Tier</label>
-                        <select 
-                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                            value={formData.subscriptionTier}
-                            onChange={e => setFormData({...formData, subscriptionTier: e.target.value as any})}
-                        >
-                            <option value="BASIC">Basic</option>
-                            <option value="PRO">Pro</option>
-                            <option value="ENTERPRISE">Enterprise</option>
-                        </select>
-                     </div>
-                     <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">System Status</label>
-                        <select 
-                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                            value={formData.isActive ? 'active' : 'inactive'}
-                            onChange={e => setFormData({...formData, isActive: e.target.value === 'active'})}
-                        >
-                            <option value="active">Active</option>
-                            <option value="inactive">Suspended</option>
-                        </select>
-                     </div>
                 </div>
 
                 <div className="pt-6 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800 mt-2">

@@ -1,19 +1,22 @@
-import React, { useState } from 'react';
-import { MOCK_CUSTOMERS, addTransaction } from '../services/mockData';
+import React, { useState, useEffect } from 'react';
+import { getCustomers, addTransaction } from '../services/firestore';
 import { Customer, TransactionType, PaymentMethod } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Search, Phone, FileText, Upload, CheckCircle, Calendar, User, CreditCard, ArrowUpRight, TrendingDown } from 'lucide-react';
+import { Search, Phone, ShoppingBag, Clock, User, CreditCard, TrendingDown } from 'lucide-react';
 
 interface CustomersProps {
   tenantId: string;
 }
 
 export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showPayModal, setShowPayModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
   
   // Payment Form State
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -22,7 +25,23 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFT);
   const [receiver, setReceiver] = useState('');
 
-  const customers = MOCK_CUSTOMERS.filter(c => c.tenantId === tenantId).filter(c => 
+  useEffect(() => {
+    const loadCustomers = async () => {
+      try {
+        setIsLoading(true);
+        const data = await getCustomers(tenantId);
+        setCustomers(data);
+      } catch (err) {
+        setError('Failed to load customers');
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadCustomers();
+  }, [tenantId]);
+
+  const filteredCustomers = customers.filter(c => 
      c.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -39,16 +58,17 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
   const handlePaymentTypeChange = (type: 'FULL' | 'PARTIAL') => {
       setPaymentType(type);
       if (type === 'FULL' && selectedCustomer) {
-          setPaymentAmount(selectedCustomer.currentDebt.toFixed(2));
+          const debt = selectedCustomer.totalCredit || selectedCustomer.currentDebt || 0;
+          setPaymentAmount(debt.toFixed(2));
       } else {
           setPaymentAmount('');
       }
   };
 
-  const processPayment = () => {
+  const processPayment = async () => {
       if (!selectedCustomer) return;
       
-      addTransaction({
+      await addTransaction({
           id: `tx_pay_${Date.now()}`,
           tenantId,
           branchId: 'b_001',
@@ -68,12 +88,31 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
       setShowPayModal(false);
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full text-slate-400">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+          <p>Loading customers...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full text-red-500">
+        <p>{error}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Customers</h2>
-              <p className="text-sm text-slate-500">Manage debtors and credit accounts.</p>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Customer Database</h2>
+              <p className="text-sm text-slate-500">View customer activity and credit status from Firestore.</p>
           </div>
           <Button variant="outline" className="bg-white dark:bg-slate-800">Export Report</Button>
        </div>
@@ -82,7 +121,7 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
            <input 
               type="text" 
-              placeholder="Search by name or phone..." 
+              placeholder="Search by name..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm transition-all"
@@ -90,55 +129,70 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
        </div>
 
        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-           {customers.map(customer => (
+           {filteredCustomers.map(customer => {
+               const debt = customer.totalCredit ?? customer.currentDebt ?? 0;
+               return (
                <div key={customer.id} className="group relative bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-100 dark:border-slate-800 shadow-soft hover:shadow-lg transition-all duration-300">
                    {/* Debt Indicator Strip */}
-                   <div className={`absolute top-0 left-0 bottom-0 w-1.5 rounded-l-2xl ${customer.currentDebt > 0 ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                   <div className={`absolute top-0 left-0 bottom-0 w-1.5 rounded-l-2xl ${debt > 0 ? 'bg-amber-500' : 'bg-slate-200'}`} />
                    
                    <div className="pl-4 flex justify-between items-start mb-4">
                        <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold border-4 border-white dark:border-slate-800 shadow-sm ${customer.currentDebt > 0 ? 'bg-red-50 text-red-600 dark:bg-red-900/20' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20'}`}>
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold border-4 border-white dark:border-slate-800 shadow-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300`}>
                                 {customer.name.charAt(0)}
                             </div>
                            <div>
                                <h3 className="font-bold text-lg text-slate-900 dark:text-white leading-tight">{customer.name}</h3>
-                               <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><Phone size={12}/> {customer.phone}</p>
+                               <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><ShoppingBag size={12}/> {customer.salesCount || 0} Sales</p>
                            </div>
                        </div>
-                       {customer.currentDebt > 0 && (
-                           <span className="px-2 py-1 bg-red-100 text-red-700 text-[10px] font-bold uppercase tracking-wider rounded">Owing</span>
-                       )}
                    </div>
 
-                   <div className="pl-4 pt-4 border-t border-slate-50 dark:border-slate-800">
-                       <div className="flex justify-between items-end">
+                   <div className="pl-4 space-y-3">
+                       <div className="flex justify-between items-center text-sm border-b border-slate-50 dark:border-slate-800 pb-2">
+                           <span className="text-slate-500 flex items-center gap-1"><Clock size={14}/> Last Purchase</span>
+                           <span className="font-medium text-slate-900 dark:text-white">
+                               {customer.lastPurchaseDate 
+                                  ? new Date(customer.lastPurchaseDate).toLocaleDateString() 
+                                  : 'N/A'}
+                           </span>
+                       </div>
+
+                       <div className="flex justify-between items-end pt-1">
                            <div>
-                               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Current Balance</p>
-                               <p className={`text-2xl font-extrabold flex items-center gap-2 ${customer.currentDebt > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                   R {customer.currentDebt.toFixed(2)}
-                                   {customer.currentDebt > 0 && <TrendingDown size={20} />}
+                               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Total Credit</p>
+                               <p className={`text-2xl font-extrabold flex items-center gap-2 ${debt > 0 ? 'text-amber-600' : 'text-slate-600'}`}>
+                                   R {debt.toFixed(2)}
                                </p>
                            </div>
-                           {customer.currentDebt > 0 ? (
-                               <Button size="sm" onClick={() => handlePayClick(customer)} className="shadow-lg shadow-red-500/20 bg-red-600 hover:bg-red-700 text-white border-none">
-                                   Pay Debt
+                           {debt > 0 ? (
+                               <Button size="sm" onClick={() => handlePayClick(customer)} className="shadow-lg shadow-amber-500/20 bg-amber-600 hover:bg-amber-700 text-white border-none">
+                                   Record Pay
                                </Button>
                            ) : (
-                               <Button variant="ghost" size="sm" className="text-slate-400 hover:text-indigo-600">
-                                   View History
-                               </Button>
+                               <div className="text-xs text-emerald-500 font-bold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded">
+                                   Good Standing
+                               </div>
                            )}
                        </div>
                    </div>
                </div>
-           ))}
+           )})}
+           
+           {filteredCustomers.length === 0 && (
+             <div className="col-span-full text-center py-12 text-slate-400">
+               <p>No customers found matching your search.</p>
+             </div>
+           )}
        </div>
 
        <Modal isOpen={showPayModal} onClose={() => setShowPayModal(false)} title="Record Payment" size="sm">
             <div className="space-y-6 pt-2">
                 <div className="text-center bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <p className="text-slate-500 text-xs uppercase font-bold tracking-wide mb-1">Customer owes</p>
-                    <p className="text-3xl font-extrabold text-red-500">R {selectedCustomer?.currentDebt.toFixed(2)}</p>
+                    <p className="text-slate-500 text-xs uppercase font-bold tracking-wide mb-1">Total Credit / Debt</p>
+                    <p className="text-3xl font-extrabold text-amber-500">
+                        R {(selectedCustomer?.totalCredit ?? selectedCustomer?.currentDebt ?? 0).toFixed(2)}
+                    </p>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mt-2">{selectedCustomer?.name}</p>
                 </div>
                 

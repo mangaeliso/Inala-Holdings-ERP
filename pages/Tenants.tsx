@@ -1,5 +1,5 @@
 import React from 'react';
-import { MOCK_TENANTS } from '../services/mockData';
+import { INITIAL_TENANTS } from '../services/mockData';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Plus, MoreHorizontal, Users, CreditCard, Activity, CheckCircle2 } from 'lucide-react';
@@ -19,7 +19,7 @@ export const Tenants: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {MOCK_TENANTS.map(tenant => (
+            {INITIAL_TENANTS.map(tenant => (
                 <Card key={tenant.id} className="relative overflow-hidden hover:shadow-lg transition-all duration-300">
                     <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: tenant.primaryColor }}></div>
                     

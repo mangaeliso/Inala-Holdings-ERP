@@ -145,6 +145,10 @@ export interface Customer {
   creditLimit: number;
   currentDebt: number;
   lastPurchaseDate?: string;
+  // New fields matching Firestore schema
+  salesCount?: number;
+  totalCredit?: number; 
+  timestamp?: string; 
 }
 
 export interface Expense {
@@ -211,4 +215,12 @@ export interface EmailMessage {
   timestamp: string;
   status: 'READ' | 'UNREAD' | 'SENT' | 'FAILED';
   folder: 'INBOX' | 'SENT';
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  category: 'TRANSACTIONAL' | 'MARKETING' | 'NOTIFICATION';
 }

@@ -1,13 +1,12 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import { MOCK_PRODUCTS, MOCK_TENANTS, MOCK_CUSTOMERS, addTransaction, addCustomer } from '../services/mockData';
-import { Product, PaymentMethod, TransactionType, Customer } from '../types';
+import React, { useState, useEffect } from 'react';
+import { getProducts, getTenants, getCustomers, addTransaction, addCustomer } from '../services/firestore';
+import { Product, PaymentMethod, TransactionType, Customer, Tenant } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { 
   Search, Plus, Minus, CreditCard, Banknote, Smartphone, 
   UserPlus, ShoppingCart, Trash2, CheckCircle, Printer, X, 
-  ChevronRight, Box, Delete, User, Sparkles
+  ChevronRight, Delete, User, Sparkles
 } from 'lucide-react';
 
 interface POSProps {
@@ -16,6 +15,10 @@ interface POSProps {
 }
 
 export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+
   const [cart, setCart] = useState<{ product: Product; qty: number }[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -34,19 +37,28 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState('');
 
-  // Filter products by tenant context
-  const tenantProducts = tenantId 
-    ? MOCK_PRODUCTS.filter(p => p.tenantId === tenantId)
-    : MOCK_PRODUCTS;
-
-  const tenant = tenantId ? MOCK_TENANTS.find(t => t.id === tenantId) : null;
-  const customers = MOCK_CUSTOMERS.filter(c => c.tenantId === tenantId);
+  useEffect(() => {
+    const loadData = async () => {
+        if (tenantId) {
+            const p = await getProducts(tenantId);
+            setProducts(p);
+            const c = await getCustomers(tenantId);
+            setCustomers(c);
+            const tList = await getTenants();
+            setTenant(tList.find(t => t.id === tenantId) || null);
+        } else {
+             const p = await getProducts();
+             setProducts(p);
+        }
+    };
+    loadData();
+  }, [tenantId]);
 
   // Derive categories
-  const allCategories = Array.from(new Set(tenantProducts.map(p => p.category)));
+  const allCategories = Array.from(new Set(products.map(p => p.category)));
   const categories = ['All', ...allCategories];
 
-  const filteredProducts = tenantProducts.filter(p => {
+  const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
     return matchesSearch && matchesCat;
@@ -122,9 +134,9 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
     processTransaction();
   };
 
-  const processTransaction = () => {
+  const processTransaction = async () => {
     const txId = `tx_${Date.now()}`;
-    addTransaction({
+    await addTransaction({
         id: txId,
         tenantId: tenantId || 'global',
         branchId: 'b_001', // mock
@@ -154,7 +166,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
     setPaymentMode(null);
   };
 
-  const handleCreateAndSelectCustomer = () => {
+  const handleCreateAndSelectCustomer = async () => {
       if (!customerSearch) return;
       const newId = `c_${Date.now()}`;
       const newCus: Customer = {
@@ -165,7 +177,8 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
           creditLimit: 1000, 
           currentDebt: 0
       };
-      addCustomer(newCus);
+      await addCustomer(newCus);
+      setCustomers(prev => [...prev, newCus]);
       setSelectedCustomer(newCus);
       
       // If we are in credit mode, keep it selected

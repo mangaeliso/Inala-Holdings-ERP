@@ -1,12 +1,12 @@
 import React from 'react';
-import { MOCK_TENANTS } from '../services/mockData';
+import { INITIAL_TENANTS } from '../services/mockData';
 import { TenantType } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Plus, MoreHorizontal, FileText, CheckCircle, AlertTriangle } from 'lucide-react';
 
 export const Lending: React.FC = () => {
-  const lenders = MOCK_TENANTS.filter(t => t.type === TenantType.LENDING);
+  const lenders = INITIAL_TENANTS.filter(t => t.type === TenantType.LENDING);
 
   return (
     <div className="space-y-6 animate-fade-in">

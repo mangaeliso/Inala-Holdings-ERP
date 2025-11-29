@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { MOCK_TENANTS, MOCK_STOKVEL_MEMBERS, addTenant } from '../services/mockData';
+import { getTenants, getStokvelMembers, addTenant } from '../services/firestore';
 import { TenantType, Tenant } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -13,6 +12,10 @@ interface StokvelsProps {
 export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
   const [stokvels, setStokvels] = useState<Tenant[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  
+  // Stats map: tenantId -> { memberCount, totalPool }
+  const [stats, setStats] = useState<Record<string, {memberCount: number, totalPool: number}>>({});
   
   // Form State
   const [formData, setFormData] = useState<Partial<Tenant>>({
@@ -26,8 +29,24 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
   });
 
   useEffect(() => {
-     setStokvels(MOCK_TENANTS.filter(t => t.type === TenantType.STOKVEL));
-  }, []);
+     const load = async () => {
+         const allTenants = await getTenants();
+         const stoks = allTenants.filter(t => t.type === TenantType.STOKVEL);
+         setStokvels(stoks);
+
+         // Load stats for each stokvel
+         const newStats: any = {};
+         for (const s of stoks) {
+             const members = await getStokvelMembers(s.id);
+             newStats[s.id] = {
+                 memberCount: members.length,
+                 totalPool: members.reduce((sum, m) => sum + m.totalContributed, 0)
+             };
+         }
+         setStats(newStats);
+     };
+     load();
+  }, [refresh]);
 
   const handleOpenAdd = () => {
       setFormData({
@@ -42,7 +61,7 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
       setShowModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
       if (!formData.name) return;
       
       const newTenant: Tenant = {
@@ -51,9 +70,9 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
           logoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name || '')}&background=${formData.primaryColor?.replace('#', '')}&color=fff&size=128`
       } as Tenant;
 
-      addTenant(newTenant);
-      setStokvels(prev => [...prev, newTenant]);
+      await addTenant(newTenant);
       setShowModal(false);
+      setRefresh(prev => prev + 1);
   };
   
   const colors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#1e293b'];
@@ -75,12 +94,9 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
         {/* Grid Layout */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {stokvels.map(stok => {
-                // Calculate real-time stats from mock members
-                const groupMembers = MOCK_STOKVEL_MEMBERS.filter(m => m.tenantId === stok.id);
-                const memberCount = groupMembers.length;
-                const totalPool = groupMembers.reduce((sum, m) => sum + m.totalContributed, 0);
-                const target = stok.target || 100000; // Default target if not set
-                const progress = Math.min(100, (totalPool / target) * 100);
+                const sStats = stats[stok.id] || { memberCount: 0, totalPool: 0 };
+                const target = stok.target || 100000;
+                const progress = Math.min(100, (sStats.totalPool / target) * 100);
 
                 return (
                     <div 
@@ -111,12 +127,12 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                             <div className="grid grid-cols-3 gap-2 mb-4 border-y border-slate-100 dark:border-slate-800 py-4">
                                 <div className="text-center">
                                     <div className="text-indigo-500 mb-1 flex justify-center"><Users size={18}/></div>
-                                    <div className="font-bold text-slate-900 dark:text-white">{memberCount}</div>
+                                    <div className="font-bold text-slate-900 dark:text-white">{sStats.memberCount}</div>
                                     <div className="text-[10px] text-slate-400 uppercase tracking-wide mt-1">Members</div>
                                 </div>
                                 <div className="text-center border-l border-slate-100 dark:border-slate-800">
                                     <div className="text-emerald-500 mb-1 flex justify-center"><Wallet size={18}/></div>
-                                    <div className="font-bold text-slate-900 dark:text-white">{(totalPool/1000).toFixed(1)}k</div>
+                                    <div className="font-bold text-slate-900 dark:text-white">{(sStats.totalPool/1000).toFixed(1)}k</div>
                                     <div className="text-[10px] text-slate-400 uppercase tracking-wide mt-1">Pool</div>
                                 </div>
                                 <div className="text-center border-l border-slate-100 dark:border-slate-800">

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { MOCK_PRODUCTS, MOCK_TENANTS, addProduct, updateProduct, deleteProduct } from '../services/mockData';
+
+import React, { useState, useEffect } from 'react';
+import { getProducts, addProduct, updateProduct, deleteProduct } from '../services/firestore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -11,6 +12,7 @@ interface InventoryProps {
 }
 
 export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
+  const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -21,7 +23,11 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
       name: '', sku: '', category: '', subcategory: '', price: 0, cost: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit'
   });
 
-  const products = MOCK_PRODUCTS.filter(p => !tenantId || p.tenantId === tenantId).filter(p => 
+  useEffect(() => {
+    getProducts(tenantId).then(setProducts);
+  }, [tenantId, refresh]);
+
+  const filteredProducts = products.filter(p => 
      p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
      p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
      p.category.toLowerCase().includes(searchTerm.toLowerCase())
@@ -33,9 +39,9 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
       setShowModal(true);
   };
 
-  const handleDelete = (productId: string) => {
+  const handleDelete = async (productId: string) => {
       if(window.confirm('Are you sure you want to delete this product?')) {
-          deleteProduct(productId);
+          await deleteProduct(productId);
           setRefresh(prev => prev + 1);
       }
   };
@@ -48,11 +54,11 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
       setShowModal(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
       if (editingProduct) {
-          updateProduct({ ...editingProduct, ...formData } as Product);
+          await updateProduct({ ...editingProduct, ...formData } as Product);
       } else {
-          addProduct({ 
+          await addProduct({ 
               ...formData, 
               id: `p_${Date.now()}`, 
               tenantId: tenantId!, 
@@ -110,8 +116,8 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                             <th className="px-6 py-4 text-right font-semibold tracking-wider">Actions</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50 bg-white dark:bg-slate-900">
-                        {products.map(product => {
+                    <tbody className="divide-y divide-slate-5 dark:divide-slate-800/50 bg-white dark:bg-slate-900">
+                        {filteredProducts.map(product => {
                             const status = getStockStatus(product.stockLevel, product.minStockThreshold);
                             return (
                                 <tr key={product.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
@@ -197,11 +203,7 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-5">
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Cost (R)</label>
-                        <input type="number" className="w-full border border-slate-300 dark:border-slate-700 p-3 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.cost} onChange={e => setFormData({...formData, cost: Number(e.target.value)})} />
-                    </div>
+                <div className="grid grid-cols-2 gap-5">
                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Price (R)</label>
                         <input type="number" className="w-full border border-slate-300 dark:border-slate-700 p-3 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none font-bold" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} />

@@ -14,11 +14,10 @@
     "lucide-react": "^0.554.0",
     "recharts": "^3.5.0",
     "@google/genai": "^1.30.0",
-    "@neondatabase/serverless": "0.9.4",
-    "pg": "^8.16.3",
-    "express": "^5.1.0",
-    "dotenv": "^17.2.3",
-    "cors": "^2.8.5"
+    "framer-motion": "10.16.4",
+    "clsx": "2.0.0",
+    "tailwind-merge": "1.14.0",
+    "firebase": "^12.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

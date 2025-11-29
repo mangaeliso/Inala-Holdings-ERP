@@ -1,10 +1,9 @@
-
-import React, { useState } from 'react';
-import { MOCK_TENANTS, MOCK_STOKVEL_MEMBERS, MOCK_CONTRIBUTIONS, MOCK_LOANS, MOCK_PAYOUTS } from '../services/mockData';
+import React, { useState, useEffect } from 'react';
+import { getTenants, getStokvelMembers, getContributions, getLoans, addStokvelMember, updateStokvelMember, deleteStokvelMember } from '../services/firestore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { ContributionStatus, LoanStatus, StokvelMember } from '../types';
+import { ContributionStatus, LoanStatus, StokvelMember, Contribution, Loan, Tenant } from '../types';
 import { 
   ArrowLeft, Users, Wallet, Calendar, Plus, Search, 
   CheckCircle2, AlertCircle, CreditCard, 
@@ -24,9 +23,10 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
   const [isProcessingPayout, setIsProcessingPayout] = useState(false);
 
   // Local State for Members to allow CRUD
-  const [members, setMembers] = useState<StokvelMember[]>(
-      MOCK_STOKVEL_MEMBERS.filter(m => m.tenantId === tenantId)
-  );
+  const [members, setMembers] = useState<StokvelMember[]>([]);
+  const [contributions, setContributions] = useState<Contribution[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
 
   // Modals
   const [showMemberModal, setShowMemberModal] = useState(false);
@@ -35,9 +35,23 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
   const [formData, setFormData] = useState<Partial<StokvelMember>>({});
   const [inviteEmail, setInviteEmail] = useState('');
 
-  const tenant = MOCK_TENANTS.find(t => t.id === tenantId);
-  const contributions = MOCK_CONTRIBUTIONS.filter(c => c.tenantId === tenantId);
-  const loans = MOCK_LOANS.filter(l => l.tenantId === tenantId);
+  useEffect(() => {
+    const load = async () => {
+        const tenants = await getTenants();
+        const t = tenants.find(t => t.id === tenantId) || null;
+        setTenant(t);
+
+        if (t) {
+            const m = await getStokvelMembers(tenantId);
+            setMembers(m);
+            const c = await getContributions(tenantId);
+            setContributions(c);
+            const l = await getLoans(tenantId);
+            setLoans(l);
+        }
+    };
+    load();
+  }, [tenantId]);
 
   // Stats
   const totalPool = members.reduce((sum, m) => sum + m.totalContributed, 0);
@@ -51,7 +65,7 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
   const targetAmount = tenant?.target || 100000;
   const targetProgress = Math.min(100, (totalPool / targetAmount) * 100);
 
-  if (!tenant) return <div>Tenant not found</div>;
+  if (!tenant) return <div>Loading...</div>;
 
   // --- CRUD Handlers ---
 
@@ -74,10 +88,12 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
       setShowMemberModal(true);
   };
 
-  const handleSaveMember = () => {
+  const handleSaveMember = async () => {
       if (selectedMember) {
           // Edit Mode
-          setMembers(prev => prev.map(m => m.id === selectedMember.id ? { ...m, ...formData } as StokvelMember : m));
+          const updated = { ...selectedMember, ...formData } as StokvelMember;
+          await updateStokvelMember(updated);
+          setMembers(prev => prev.map(m => m.id === selectedMember.id ? updated : m));
       } else {
           // Add Mode
           const newMember: StokvelMember = {
@@ -88,13 +104,15 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
               avatarUrl: `https://ui-avatars.com/api/?name=${formData.name}&background=random`,
               ...formData as any
           };
+          await addStokvelMember(newMember);
           setMembers(prev => [...prev, newMember]);
       }
       setShowMemberModal(false);
   };
 
-  const handleDeleteMember = (memberId: string) => {
+  const handleDeleteMember = async (memberId: string) => {
       if (confirm('Are you sure you want to remove this member? This action cannot be undone.')) {
+          await deleteStokvelMember(memberId);
           setMembers(prev => prev.filter(m => m.id !== memberId));
       }
   };

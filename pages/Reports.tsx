@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { MOCK_TRANSACTIONS, MOCK_EXPENSES, MOCK_PRODUCTS, MOCK_CUSTOMERS, addTransaction } from '../services/mockData';
-import { TransactionType, PaymentMethod, Customer } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { getTransactions, getExpenses, getProducts, getCustomers, addTransaction } from '../services/firestore';
+import { TransactionType, PaymentMethod, Customer, Transaction, Expense, Product } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -15,6 +15,8 @@ import {
   Receipt,
   ArrowLeft,
   CheckCircle2,
+  ShoppingBag,
+  Clock
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
@@ -27,6 +29,26 @@ type ReportView = 'DASHBOARD' | 'CREDITS' | 'TRANSACTIONS' | 'COLLECTIONS' | 'CO
 export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
   const [view, setView] = useState<ReportView>('DASHBOARD');
   
+  // Data State
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+        const txs = await getTransactions(tenantId);
+        setTransactions(txs);
+        const exps = await getExpenses(tenantId);
+        setExpenses(exps);
+        const prods = await getProducts(tenantId);
+        setProducts(prods);
+        const custs = await getCustomers(tenantId);
+        setCustomers(custs);
+    };
+    fetchData();
+  }, [tenantId]);
+
   // Dashboard Filters
   const [period, setPeriod] = useState<'current' | 'last' | 'all'>('current');
   const [useBusinessCycle, setUseBusinessCycle] = useState(true);
@@ -73,15 +95,15 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
 
   const { start, end } = getDateRange();
 
-  const dashboardTransactions = useMemo(() => MOCK_TRANSACTIONS.filter(t => {
+  const dashboardTransactions = useMemo(() => transactions.filter(t => {
       const tDate = new Date(t.timestamp);
-      return t.tenantId === tenantId && t.type === TransactionType.SALE && tDate >= start && tDate <= end;
-  }), [tenantId, start, end]);
+      return t.type === TransactionType.SALE && tDate >= start && tDate <= end;
+  }), [transactions, start, end]);
 
-  const dashboardExpenses = useMemo(() => MOCK_EXPENSES.filter(e => {
+  const dashboardExpenses = useMemo(() => expenses.filter(e => {
       const eDate = new Date(e.date);
-      return e.tenantId === tenantId && eDate >= start && eDate <= end;
-  }), [tenantId, start, end]);
+      return eDate >= start && eDate <= end;
+  }), [expenses, start, end]);
 
   const totalSales = dashboardTransactions.reduce((sum, t) => sum + t.amount, 0);
   const totalOpExpenses = dashboardExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -89,7 +111,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
   const totalCOGS = dashboardTransactions.reduce((sum, t) => {
       if (!t.items) return sum;
       return sum + t.items.reduce((iSum, item) => {
-          const product = MOCK_PRODUCTS.find(p => p.id === item.productId);
+          const product = products.find(p => p.id === item.productId);
           return iSum + ((product?.cost || 0) * item.qty);
       }, 0);
   }, 0);
@@ -102,7 +124,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
     dashboardTransactions.forEach(tx => {
       if (!tx.items) return;
       tx.items.forEach(item => {
-        const product = MOCK_PRODUCTS.find(p => p.id === item.productId);
+        const product = products.find(p => p.id === item.productId);
         const cat = product?.category || 'Uncategorized';
         if (!stats[cat]) stats[cat] = { sales: 0, cogs: 0, txCount: 0, products: {} };
         stats[cat].sales += item.subtotal;
@@ -120,14 +142,14 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
       transactions: data.txCount,
       topProducts: Object.entries(data.products).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([p, q]) => `${p} (${q})`).join(', ')
     }));
-  }, [dashboardTransactions]);
+  }, [dashboardTransactions, products]);
 
   // --- 2. SUB-VIEW DATA HOOKS ---
 
   // Manage Credits Data
   const creditCustomers = useMemo(() => {
-     return MOCK_CUSTOMERS.filter(c => c.tenantId === tenantId && c.currentDebt > 0);
-  }, [tenantId]);
+     return customers.filter(c => c.currentDebt > 0);
+  }, [customers]);
 
   // Payment Logic
   const handlePayClick = (customer: Customer) => {
@@ -149,10 +171,10 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
       }
   };
 
-  const processPayment = () => {
+  const processPayment = async () => {
       if (!selectedCustomer) return;
       
-      addTransaction({
+      await addTransaction({
           id: `tx_pay_${Date.now()}`,
           tenantId,
           branchId: 'b_001',
@@ -174,9 +196,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
 
   // All Transactions Data
   const allHistory = useMemo(() => {
-     const txs = MOCK_TRANSACTIONS
-        .filter(t => t.tenantId === tenantId)
-        .map(t => ({
+     const txs = transactions.map(t => ({
            id: t.id,
            date: t.timestamp,
            type: t.type === TransactionType.SALE ? 'SALE' : t.type === TransactionType.EXPENSE ? 'EXPENSE' : t.type,
@@ -187,9 +207,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
            status: t.status
         }));
      
-     const exps = MOCK_EXPENSES
-        .filter(e => e.tenantId === tenantId)
-        .map(e => ({
+     const exps = expenses.map(e => ({
            id: e.id,
            date: e.date,
            type: 'EXPENSE',
@@ -201,12 +219,11 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
         }));
 
      return [...txs, ...exps].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [tenantId]);
+  }, [transactions, expenses]);
 
   // Payment Collections Data (Cash/Card/MoMo Inflow)
   const collections = useMemo(() => {
-      return MOCK_TRANSACTIONS.filter(t => 
-          t.tenantId === tenantId && 
+      return transactions.filter(t => 
           (t.type === TransactionType.SALE || t.type === TransactionType.DEBT_PAYMENT) &&
           t.method !== PaymentMethod.CREDIT // Only collected money
       ).map(t => ({
@@ -214,30 +231,30 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
           staffName: t.receivedBy || 'Staff Member', // Default if undefined
           itemsSummary: t.items ? t.items.map(i => i.name).join(', ') : 'Debt Payment'
       })).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [tenantId]);
+  }, [transactions]);
 
   // Comparison Logic
   const getMonthStats = (monthStr: string) => {
       const mStart = new Date(monthStr + '-01');
       const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59);
 
-      const txs = MOCK_TRANSACTIONS.filter(t => {
+      const txs = transactions.filter(t => {
           const d = new Date(t.timestamp);
-          return t.tenantId === tenantId && t.type === TransactionType.SALE && d >= mStart && d <= mEnd;
+          return t.type === TransactionType.SALE && d >= mStart && d <= mEnd;
       });
       
       const sales = txs.reduce((sum, t) => sum + t.amount, 0);
       const cogs = txs.reduce((sum, t) => {
         if(!t.items) return sum;
         return sum + t.items.reduce((iSum, item) => {
-            const p = MOCK_PRODUCTS.find(prod => prod.id === item.productId);
+            const p = products.find(prod => prod.id === item.productId);
             return iSum + ((p?.cost || 0) * item.qty);
         }, 0);
       }, 0);
 
-      const exps = MOCK_EXPENSES.filter(e => {
+      const exps = expenses.filter(e => {
           const d = new Date(e.date);
-          return e.tenantId === tenantId && d >= mStart && d <= mEnd;
+          return d >= mStart && d <= mEnd;
       }).reduce((sum, e) => sum + e.amount, 0);
 
       return {
@@ -420,50 +437,51 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
               <h2 className="text-2xl font-bold">Outstanding Credits</h2>
           </div>
 
-          <Card noPadding>
-              <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                      <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-xs uppercase text-slate-500">
-                          <tr>
-                              <th className="px-6 py-4">Customer</th>
-                              <th className="px-6 py-4">Phone</th>
-                              <th className="px-6 py-4">Last Purchase</th>
-                              <th className="px-6 py-4 text-right">Credit Limit</th>
-                              <th className="px-6 py-4 text-right">Current Debt</th>
-                              <th className="px-6 py-4 text-center">Status</th>
-                              <th className="px-6 py-4 text-center">Actions</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {creditCustomers.map(c => (
-                              <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                  <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">{c.name}</td>
-                                  <td className="px-6 py-4 text-slate-500">{c.phone}</td>
-                                  <td className="px-6 py-4 text-slate-500">{new Date(c.lastPurchaseDate || '').toLocaleDateString()}</td>
-                                  <td className="px-6 py-4 text-right">R {c.creditLimit.toLocaleString()}</td>
-                                  <td className="px-6 py-4 text-right font-black text-red-500">R {c.currentDebt.toLocaleString()}</td>
-                                  <td className="px-6 py-4 text-center">
-                                      <span className="px-2 py-1 bg-red-100 text-red-600 rounded text-xs font-bold uppercase">Overdue</span>
-                                  </td>
-                                  <td className="px-6 py-4 text-center">
-                                      <Button size="sm" variant="secondary" onClick={() => handlePayClick(c)} className="bg-red-500 hover:bg-red-600 text-white shadow-red-500/20">
-                                          Pay Debt
-                                      </Button>
-                                  </td>
-                              </tr>
-                          ))}
-                          {creditCustomers.length === 0 && (
-                              <tr>
-                                  <td colSpan={7} className="text-center py-12 text-slate-400">
-                                      <CheckCircle2 size={32} className="mx-auto mb-2 text-emerald-500"/>
-                                      No outstanding credits found.
-                                  </td>
-                              </tr>
-                          )}
-                      </tbody>
-                  </table>
-              </div>
-          </Card>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {creditCustomers.map(c => (
+                <div key={c.id} className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:shadow-lg transition-all">
+                    <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-amber-500 rounded-l-2xl"></div>
+                    
+                    <div className="pl-4 flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-600 dark:text-slate-300">
+                                {c.name.charAt(0)}
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-lg leading-tight text-slate-900 dark:text-white">{c.name}</h4>
+                                <p className="text-xs text-slate-500 flex items-center gap-1">
+                                    <ShoppingBag size={10} /> {c.salesCount || 0} Sales
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="pl-4 space-y-3">
+                        <div className="flex justify-between items-center text-sm pb-2 border-b border-slate-50 dark:border-slate-800">
+                            <span className="text-slate-500 flex items-center gap-1"><Clock size={12}/> Last Purchase</span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                                {c.lastPurchaseDate ? new Date(c.lastPurchaseDate).toLocaleDateString() : '-'}
+                            </span>
+                        </div>
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-slate-400">Current Debt</p>
+                                <p className="text-2xl font-black text-amber-600">R {c.currentDebt.toFixed(2)}</p>
+                            </div>
+                            <Button size="sm" onClick={() => handlePayClick(c)} className="bg-amber-600 hover:bg-amber-700 text-white shadow-lg shadow-amber-600/20">
+                                Record Pay
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            ))}
+            {creditCustomers.length === 0 && (
+                <div className="col-span-full p-12 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                    <CheckCircle2 size={48} className="mx-auto mb-4 text-emerald-500 opacity-50"/>
+                    <p>No outstanding credits found.</p>
+                </div>
+            )}
+        </div>
 
           <Modal isOpen={showPayModal} onClose={() => setShowPayModal(false)} title="Record Payment" size="sm">
             <div className="space-y-6 pt-2">
@@ -603,7 +621,16 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
       </div>
   );
 
-  const renderCollections = () => (
+  const renderCollections = () => {
+      // Group by Date
+      const groupedCollections: Record<string, typeof collections> = {};
+      collections.forEach(item => {
+          const dateKey = new Date(item.timestamp).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+          if (!groupedCollections[dateKey]) groupedCollections[dateKey] = [];
+          groupedCollections[dateKey].push(item);
+      });
+
+      return (
       <div className="animate-fade-in">
           <div className="flex items-center gap-4 mb-6">
               <Button variant="outline" onClick={() => setView('DASHBOARD')} className="bg-white dark:bg-slate-800">
@@ -612,60 +639,46 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
               <h2 className="text-2xl font-bold">Payment Collections</h2>
           </div>
 
-          <Card noPadding>
-              <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                      <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-xs uppercase text-slate-500">
-                          <tr>
-                              <th className="px-6 py-4">Received By</th>
-                              <th className="px-6 py-4">Customer</th>
-                              <th className="px-6 py-4">Date</th>
-                              <th className="px-6 py-4">Items / Reference</th>
-                              <th className="px-6 py-4">Method</th>
-                              <th className="px-6 py-4 text-right">Amount Collected</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {collections.map((col, i) => (
-                              <tr key={col.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                  <td className="px-6 py-4">
-                                      <div className="flex items-center gap-2">
-                                          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs">
-                                              {col.staffName.charAt(0)}
-                                          </div>
-                                          <span className="font-medium text-slate-900 dark:text-white">{col.staffName}</span>
+          <div className="space-y-6">
+              {Object.keys(groupedCollections).length === 0 && (
+                  <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
+                      No collections found for this period.
+                  </div>
+              )}
+
+              {Object.entries(groupedCollections).map(([date, items]) => (
+                  <Card key={date} noPadding>
+                      <div className="bg-slate-50 dark:bg-slate-800/50 p-3 border-b border-slate-100 dark:border-slate-800 font-bold text-sm text-slate-700 dark:text-slate-300 sticky top-0">
+                          {date}
+                      </div>
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {items.map(t => (
+                              <div key={t.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                  <div className="flex items-center gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
+                                          {(t.customerName || 'W').charAt(0)}
                                       </div>
-                                  </td>
-                                  <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                                      {col.customerName || 'Walk-In'}
-                                  </td>
-                                  <td className="px-6 py-4 text-slate-500 text-xs">
-                                      {new Date(col.timestamp).toLocaleDateString()} {new Date(col.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-                                  </td>
-                                  <td className="px-6 py-4 text-slate-500 truncate max-w-xs text-xs">
-                                      {col.itemsSummary}
-                                  </td>
-                                  <td className="px-6 py-4">
-                                      <span className="px-2 py-0.5 border border-slate-200 rounded text-xs text-slate-500">{col.method}</span>
-                                  </td>
-                                  <td className="px-6 py-4 text-right font-bold text-emerald-600">
-                                      R {col.amount.toFixed(2)}
-                                  </td>
-                              </tr>
+                                      <div>
+                                          <p className="font-bold text-sm text-slate-900 dark:text-white">{t.customerName || 'Walk-In Customer'}</p>
+                                          <p className="text-xs text-slate-500 truncate max-w-[200px]">
+                                              {t.type === TransactionType.DEBT_PAYMENT ? 'Debt Payment' : t.itemsSummary}
+                                          </p>
+                                          <p className="text-[10px] text-slate-400">Rec: {t.staffName}</p>
+                                      </div>
+                                  </div>
+                                  <div className="text-right">
+                                      <p className="font-bold text-emerald-600 dark:text-emerald-400">R {t.amount.toFixed(2)}</p>
+                                      <p className="text-xs text-slate-400 uppercase border border-slate-200 dark:border-slate-700 px-1.5 rounded inline-block mt-1">{t.method}</p>
+                                  </div>
+                              </div>
                           ))}
-                          {collections.length === 0 && (
-                              <tr>
-                                  <td colSpan={6} className="text-center py-12 text-slate-400">
-                                      No collections found.
-                                  </td>
-                              </tr>
-                          )}
-                      </tbody>
-                  </table>
-              </div>
-          </Card>
+                      </div>
+                  </Card>
+              ))}
+          </div>
       </div>
-  );
+      );
+  };
 
   const renderComparison = () => (
       <div className="animate-fade-in space-y-6">
