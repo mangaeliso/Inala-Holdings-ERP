@@ -1,5 +1,4 @@
 
-
 // Enums for standardizing statuses and roles
 export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
@@ -56,6 +55,49 @@ export enum ContributionStatus {
   PARTIAL = 'PARTIAL'
 }
 
+// Configuration Interfaces
+export interface EmailConfig {
+  smtpHost?: string;
+  smtpPort?: string;
+  smtpUser?: string;
+  senderEmail: string;
+  replyTo?: string;
+  templates: EmailTemplate[];
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  category: 'TRANSACTIONAL' | 'MARKETING' | 'NOTIFICATION';
+}
+
+export interface NotificationSettings {
+  emailNewSale: boolean;
+  smsPayment: boolean;
+  dailySummary: boolean;
+  lowStock: boolean;
+  creditWarning: boolean;
+  autoMonthlyReport: boolean;
+  recipients: string[];
+}
+
+export interface POSSettings {
+  receiptFooter: string;
+  taxRate: number;
+  enableCash: boolean;
+  enableCard: boolean;
+  enableCredit: boolean;
+  autoPrint: boolean;
+}
+
+export interface BusinessCycleSettings {
+  startDay: number; // e.g., 5
+  endDay: number;   // e.g., 4
+  fiscalStartMonth: number;
+}
+
 // Interfaces
 export interface Tenant {
   id: string;
@@ -68,6 +110,20 @@ export interface Tenant {
   isActive: boolean;
   target?: number; // Financial target for the stokvel
   category?: string; // Business category
+  
+  // Detailed Profile Info
+  regNumber?: string;
+  taxNumber?: string;
+  address?: string;
+  contactNumber?: string;
+  email?: string;
+  website?: string;
+  
+  // Settings Configs (Nested)
+  emailConfig?: EmailConfig;
+  notifications?: NotificationSettings;
+  posSettings?: POSSettings;
+  cycleSettings?: BusinessCycleSettings;
 }
 
 export interface Branch {
@@ -83,8 +139,10 @@ export interface User {
   branchId?: string;
   name: string;
   email: string;
+  phone?: string;
   role: UserRole;
   avatarUrl?: string;
+  permissions?: string[]; // E.g., ['VIEW_REPORTS', 'MANAGE_STOCK']
 }
 
 export interface StokvelMember {
@@ -217,12 +275,4 @@ export interface EmailMessage {
   timestamp: string;
   status: 'READ' | 'UNREAD' | 'SENT' | 'FAILED';
   folder: 'INBOX' | 'SENT';
-}
-
-export interface EmailTemplate {
-  id: string;
-  name: string;
-  subject: string;
-  body: string;
-  category: 'TRANSACTIONAL' | 'MARKETING' | 'NOTIFICATION';
 }

@@ -162,7 +162,7 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                            <div>
                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Total Credit</p>
                                <p className={`text-2xl font-extrabold flex items-center gap-2 ${debt > 0 ? 'text-amber-600' : 'text-slate-600'}`}>
-                                   R {debt.toFixed(2)}
+                                   R {(debt || 0).toFixed(2)}
                                </p>
                            </div>
                            {debt > 0 ? (
@@ -232,8 +232,8 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                         <div className="space-y-1.5">
                             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Date</label>
                             <input 
-                                type="date"
-                                value={paymentDate}
+                                type="date" 
+                                value={paymentDate} 
                                 onChange={(e) => setPaymentDate(e.target.value)}
                                 className="w-full px-3 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                             />

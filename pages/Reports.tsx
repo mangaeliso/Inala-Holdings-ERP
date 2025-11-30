@@ -135,8 +135,8 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
 
       // 2. Metrics
       const salesTxs = filteredTxs.filter(t => t.type === TransactionType.SALE);
-      const totalSales = salesTxs.reduce((sum, t) => sum + t.amount, 0);
-      const totalExpenses = filteredExps.reduce((sum, e) => sum + e.amount, 0);
+      const totalSales = salesTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+      const totalExpenses = filteredExps.reduce((sum, e) => sum + (e.amount || 0), 0);
       const netProfit = totalSales - totalExpenses;
       const txCount = salesTxs.length + filteredExps.length;
 
@@ -175,7 +175,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                   (e.category || '').toLowerCase().includes(cat.toLowerCase()) || 
                   (e.description || '').toLowerCase().includes(cat.toLowerCase())
               )
-              .reduce((sum, e) => sum + e.amount, 0);
+              .reduce((sum, e) => sum + (e.amount || 0), 0);
 
           const profit = catSales - catExpenses;
           const margin = catSales > 0 ? (profit / catSales) * 100 : 0;
@@ -210,7 +210,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                 <div className="flex justify-between items-start">
                     <div>
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Sales</p>
-                        <h3 className="text-2xl font-black text-emerald-600 mt-2">R {dashboardData.totalSales.toLocaleString()}</h3>
+                        <h3 className="text-2xl font-black text-emerald-600 mt-2">R {(dashboardData.totalSales || 0).toLocaleString()}</h3>
                     </div>
                 </div>
             </Card>
@@ -218,7 +218,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                 <div className="flex justify-between items-start">
                     <div>
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Expenses</p>
-                        <h3 className="text-2xl font-black text-red-600 mt-2">R {dashboardData.totalExpenses.toLocaleString()}</h3>
+                        <h3 className="text-2xl font-black text-red-600 mt-2">R {(dashboardData.totalExpenses || 0).toLocaleString()}</h3>
                     </div>
                     <div className="text-right">
                         <p className="text-[10px] text-slate-400">Total</p>
@@ -226,12 +226,12 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                     </div>
                 </div>
             </Card>
-            <Card className={`border-l-4 ${dashboardData.netProfit >= 0 ? 'border-emerald-500' : 'border-red-500'}`}>
+            <Card className={`border-l-4 ${(dashboardData.netProfit || 0) >= 0 ? 'border-emerald-500' : 'border-red-500'}`}>
                 <div className="flex justify-between items-start">
                     <div>
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Net Profit</p>
-                        <h3 className={`text-2xl font-black mt-2 ${dashboardData.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                            R {dashboardData.netProfit.toLocaleString()}
+                        <h3 className={`text-2xl font-black mt-2 ${(dashboardData.netProfit || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                            R {(dashboardData.netProfit || 0).toLocaleString()}
                         </h3>
                     </div>
                     <div className="text-right">
@@ -243,7 +243,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                 <div className="flex justify-between items-start">
                     <div>
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Transactions</p>
-                        <h3 className="text-2xl font-black text-blue-600 mt-2">{dashboardData.txCount}</h3>
+                        <h3 className="text-2xl font-black text-blue-600 mt-2">{dashboardData.txCount || 0}</h3>
                     </div>
                 </div>
             </Card>
@@ -279,34 +279,34 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                     <Card key={index} className="flex flex-col h-full border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex justify-between items-start mb-6">
                             <h4 className="font-bold text-slate-900 dark:text-white">{cat.name}</h4>
-                            <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${cat.profit >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                {cat.profit >= 0 ? 'PROFITABLE' : 'LOSS'}
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${(cat.profit || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                {(cat.profit || 0) >= 0 ? 'PROFITABLE' : 'LOSS'}
                             </span>
                         </div>
 
                         <div className="text-center mb-8">
-                            <h2 className={`text-3xl font-black ${cat.profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                R {cat.profit.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                            <h2 className={`text-3xl font-black ${(cat.profit || 0) >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                R {(cat.profit || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
                             </h2>
                         </div>
 
                         <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-6 px-2">
                             <div>
                                 <p className="text-[10px] text-slate-400 uppercase font-bold">SALES</p>
-                                <p className="text-sm font-bold text-emerald-500">R {cat.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                                <p className="text-sm font-bold text-emerald-500">R {(cat.sales || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                             </div>
                             <div>
                                 <p className="text-[10px] text-slate-400 uppercase font-bold">EXPENSES</p>
-                                <p className="text-sm font-bold text-red-500">R {cat.expenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                                <p className="text-sm font-bold text-red-500">R {(cat.expenses || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
                             </div>
                             <div>
                                 <p className="text-[10px] text-slate-400 uppercase font-bold">TRANSACTIONS</p>
-                                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{cat.transactions}</p>
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{cat.transactions || 0}</p>
                             </div>
                             <div>
                                 <p className="text-[10px] text-slate-400 uppercase font-bold">MARGIN</p>
-                                <p className={`text-sm font-bold ${cat.margin >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                    {cat.margin.toFixed(1)}%
+                                <p className={`text-sm font-bold ${(cat.margin || 0) >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                    {(cat.margin || 0).toFixed(1)}%
                                 </p>
                             </div>
                         </div>
@@ -324,7 +324,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
 
   const renderCredits = () => {
       // Filter customers with positive debt
-      const debtorCustomers = customers.filter(c => c.currentDebt > 0 || (c.totalCredit && c.totalCredit > 0));
+      const debtorCustomers = customers.filter(c => (c.currentDebt || 0) > 0 || (c.totalCredit || 0) > 0);
 
       return (
           <div className="animate-fade-in space-y-6">
@@ -337,7 +337,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {debtorCustomers.map(customer => {
-                      const debt = customer.totalCredit ?? customer.currentDebt ?? 0;
+                      const debt = (customer.totalCredit || 0) + (customer.currentDebt || 0);
                       return (
                        <div key={customer.id} className="group relative bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-100 dark:border-slate-800 shadow-soft hover:shadow-lg transition-all duration-300">
                            <div className="absolute top-0 left-0 bottom-0 w-1.5 rounded-l-2xl bg-amber-500" />
@@ -444,7 +444,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                                       </td>
                                       <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{item.desc}</td>
                                       <td className={`px-6 py-4 text-right font-bold ${item.isExpense ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
-                                          {item.isExpense ? '-' : '+'} R {item.amount.toFixed(2)}
+                                          {item.isExpense ? '-' : '+'} R {(item.amount || 0).toFixed(2)}
                                       </td>
                                   </tr>
                               ))}
@@ -486,7 +486,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                               </div>
                           </div>
                           <div className="text-right">
-                              <p className="font-bold text-emerald-600">R {t.amount.toFixed(2)}</p>
+                              <p className="font-bold text-emerald-600">R {(t.amount || 0).toFixed(2)}</p>
                               <p className="text-xs text-slate-400 uppercase">{t.method}</p>
                           </div>
                       </Card>
@@ -523,8 +523,8 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
       const getMetrics = (s: Date, e: Date) => {
           const txs = transactions.filter(t => { const d = new Date(t.timestamp); return d >= s && d <= e && t.type === TransactionType.SALE; });
           const exps = expenses.filter(x => { const d = new Date(x.date); return d >= s && d <= e; });
-          const sales = txs.reduce((sum, t) => sum + t.amount, 0);
-          const expense = exps.reduce((sum, x) => sum + x.amount, 0);
+          const sales = txs.reduce((sum, t) => sum + (t.amount || 0), 0);
+          const expense = exps.reduce((sum, x) => sum + (x.amount || 0), 0);
           return { sales, expense, profit: sales - expense };
       };
 
@@ -532,8 +532,9 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
       const prev = getMetrics(prevStart, prevEnd);
 
       const getPct = (c: number, p: number) => {
-          if (p === 0) return c > 0 ? 100 : 0;
-          return ((c - p) / p) * 100;
+          if (!p || p === 0) return c > 0 ? 100 : 0;
+          const result = ((c - p) / p) * 100;
+          return isFinite(result) ? result : 0;
       };
 
       const stats = [
@@ -557,12 +558,12 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                               <div key={i} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4 last:border-0 last:pb-0">
                                   <span className="font-bold text-lg text-slate-700 dark:text-slate-300">{stat.label}</span>
                                   <div className="flex gap-8 items-center text-right">
-                                      <span className="w-32 text-slate-400">R {stat.prev.toLocaleString()}</span>
-                                      <span className="w-32 font-black text-xl text-slate-900 dark:text-white">R {stat.curr.toLocaleString()}</span>
+                                      <span className="w-32 text-slate-400">R {(stat.prev || 0).toLocaleString()}</span>
+                                      <span className="w-32 font-black text-xl text-slate-900 dark:text-white">R {(stat.curr || 0).toLocaleString()}</span>
                                       <div className={`w-20 flex justify-end`}>
-                                          <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center ${stat.change >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                              {stat.change >= 0 ? <TrendingUp size={12} className="mr-1"/> : <TrendingDown size={12} className="mr-1"/>}
-                                              {Math.abs(stat.change).toFixed(1)}%
+                                          <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center ${(stat.change || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                              {(stat.change || 0) >= 0 ? <TrendingUp size={12} className="mr-1"/> : <TrendingDown size={12} className="mr-1"/>}
+                                              {Math.abs(stat.change || 0).toFixed(1)}%
                                           </span>
                                       </div>
                                   </div>
@@ -574,9 +575,9 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                   <div className="h-80 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={[
-                                { name: 'Sales', prev: prev.sales, curr: curr.sales },
-                                { name: 'Expenses', prev: prev.expense, curr: curr.expense },
-                                { name: 'Profit', prev: prev.profit, curr: curr.profit }
+                                { name: 'Sales', prev: prev.sales || 0, curr: curr.sales || 0 },
+                                { name: 'Expenses', prev: prev.expense || 0, curr: curr.expense || 0 },
+                                { name: 'Profit', prev: prev.profit || 0, curr: curr.profit || 0 }
                             ]}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
@@ -627,7 +628,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
       
       setCustomers(prev => prev.map(c => 
           c.id === selectedCustomer.id 
-          ? { ...c, currentDebt: c.currentDebt - Number(paymentAmount) } 
+          ? { ...c, currentDebt: (c.currentDebt || 0) - Number(paymentAmount) } 
           : c
       ));
       setShowPayModal(false);
@@ -691,7 +692,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
             <div className="space-y-6 pt-2">
                 <div className="text-center bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                     <p className="text-slate-500 text-xs uppercase font-bold tracking-wide mb-1">Customer owes</p>
-                    <p className="text-3xl font-extrabold text-red-500">R {(selectedCustomer?.totalCredit ?? selectedCustomer?.currentDebt ?? 0).toFixed(2)}</p>
+                    <p className="text-3xl font-extrabold text-red-500">R {((selectedCustomer?.totalCredit || 0) + (selectedCustomer?.currentDebt || 0)).toFixed(2)}</p>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mt-2">{selectedCustomer?.name}</p>
                 </div>
                 
@@ -709,7 +710,7 @@ export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
                         onClick={() => {
                             setPaymentType('FULL');
                             if (selectedCustomer) {
-                                const debt = selectedCustomer.totalCredit || selectedCustomer.currentDebt || 0;
+                                const debt = (selectedCustomer.totalCredit || 0) + (selectedCustomer.currentDebt || 0);
                                 setPaymentAmount(debt.toFixed(2));
                             }
                         }}

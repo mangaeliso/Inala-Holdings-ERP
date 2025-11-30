@@ -67,7 +67,7 @@ export const Finance: React.FC = () => {
                     <span className="text-xs text-slate-400">{new Date(pop.timestamp).toLocaleDateString()}</span>
                   </div>
                   <h4 className="font-bold text-slate-900 dark:text-white">Ref: {pop.reference}</h4>
-                  <p className="text-sm text-slate-500">Amount: <strong>R {pop.amount.toFixed(2)}</strong></p>
+                  <p className="text-sm text-slate-500">Amount: <strong>R {(pop.amount || 0).toFixed(2)}</strong></p>
                   <p className="text-xs text-slate-400 mt-1">Uploaded by User ID: {pop.uploadedBy}</p>
                 </div>
 
@@ -103,7 +103,7 @@ export const Finance: React.FC = () => {
             <Card className="bg-gradient-to-br from-slate-900 to-indigo-900 text-white">
                 <h3 className="font-bold text-lg mb-2">Total Verified</h3>
                 <p className="text-4xl font-black">
-                    R {pops.filter(p => p.status === POPStatus.VERIFIED).reduce((acc, p) => acc + p.amount, 0).toLocaleString()}
+                    R {pops.filter(p => p.status === POPStatus.VERIFIED).reduce((acc, p) => acc + (p.amount || 0), 0).toLocaleString()}
                 </p>
                 <p className="text-indigo-200 text-sm mt-2">All time processed volume</p>
             </Card>

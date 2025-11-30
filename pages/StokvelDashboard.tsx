@@ -252,7 +252,7 @@ export const StokvelDashboard: React.FC<StokvelDashboardProps> = ({ tenantId, on
                           <span className="text-xs font-medium px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-md text-slate-600 dark:text-slate-400">6 Months</span>
                       </div>
                   </div>
-                  <div className="h-64 w-full">
+                  <div className="w-full h-[300px] min-w-0">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={[
                             { name: 'Sep', amount: expectedCollection * 0.9 },

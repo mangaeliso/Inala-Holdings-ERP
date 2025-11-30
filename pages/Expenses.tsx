@@ -104,7 +104,7 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
                     </div>
                  </div>
                  <div className="p-4 text-right">
-                    <span className="font-bold text-red-600">- R {expense.amount.toFixed(2)}</span>
+                    <span className="font-bold text-red-600">- R {(expense.amount || 0).toFixed(2)}</span>
                     <p className="text-xs text-slate-400 mt-1">{expense.status}</p>
                  </div>
               </Card>
@@ -114,15 +114,19 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
         {/* Profit Chart */}
         <Card>
             <h3 className="font-bold text-lg mb-4">Profitability Analysis</h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={chartData}>
-                    <XAxis dataKey="name" fontSize={12} axisLine={false} tickLine={false} />
-                    <YAxis fontSize={12} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{fill: 'transparent'}} />
-                    <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                 </BarChart>
-              </ResponsiveContainer>
+            <div className="w-full h-[300px] min-w-0">
+              {chartData.some(d => d.amount > 0 || d.amount < 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                   <BarChart data={chartData}>
+                      <XAxis dataKey="name" fontSize={12} axisLine={false} tickLine={false} />
+                      <YAxis fontSize={12} axisLine={false} tickLine={false} />
+                      <Tooltip cursor={{fill: 'transparent'}} />
+                      <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                   </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-slate-400 text-sm">No data available</div>
+              )}
             </div>
         </Card>
       </div>

@@ -9,8 +9,8 @@ import {
     getDoc,
     query,
     where,
-    Timestamp,
-    limit
+    limit,
+    Timestamp
 } from 'firebase/firestore';
 import { db } from '../lib/db';
 import * as InitialData from './mockData';
@@ -60,18 +60,12 @@ async function fetchWithFallback<T>(
 }
 
 // --- CYCLE CHECKER & SEEDER ---
-// Ensures that we always have transactions for the CURRENT business cycle in Firestore.
-// If the dashboard is empty, this function fills it.
 export const ensureCurrentCycleData = async () => {
     try {
         const targetBusinessId = 't_biz_01'; // Default butchery
         const txRef = getBusinessCollection(targetBusinessId, 'transactions');
-        
-        // Calculate the exact start of the current cycle (5th of month)
         const cycleStart = InitialData.getCycleStartDate();
         
-        // Query for ANY transaction timestamped after this start date
-        // Note: Comparing ISO strings works alphabetically for standard ISO format
         const q = query(txRef, where('timestamp', '>=', cycleStart.toISOString()), limit(1));
         const snap = await getDocs(q);
         
@@ -82,11 +76,8 @@ export const ensureCurrentCycleData = async () => {
             
             freshTxs.forEach(t => {
                 const docRef = doc(txRef, t.id);
-                // Ensure timestamp is properly formatted string
                 const data = { ...t, timestamp: t.timestamp }; 
                 batch.set(docRef, data);
-                
-                // Duplicate to legacy sales collection if needed by other components
                 if (t.type === TransactionType.SALE) {
                      const saleRef = doc(getBusinessCollection(targetBusinessId, 'sales'), t.id);
                      batch.set(saleRef, data);
@@ -95,18 +86,62 @@ export const ensureCurrentCycleData = async () => {
             
             await batch.commit();
             console.log(`Seeded ${freshTxs.length} fresh transactions.`);
-        } else {
-            console.log('Current cycle data verified in Firestore.');
         }
     } catch (error) {
-        console.warn('Auto-seed check failed (likely permission/network):', error);
+        console.warn('Auto-seed check failed:', error);
     }
 };
 
-// --- MIGRATION SCRIPT ---
 export const migrateTopLevelToButchery = async () => {
     await ensureCurrentCycleData();
-    // ... existing migration logic if needed ...
+};
+
+// --- SETTINGS MANAGEMENT ---
+
+export const getBusinessProfile = async (tenantId: string): Promise<Tenant | null> => {
+    if (tenantId === 'global') return InitialData.INALA_HOLDINGS_TENANT;
+    try {
+        const docRef = doc(db, 'businesses', tenantId); 
+        const snap = await getDoc(docRef);
+        
+        if (snap.exists()) {
+            return { id: snap.id, ...snap.data() } as Tenant;
+        }
+        
+        const tenants = await getTenants();
+        return tenants.find(t => t.id === tenantId) || null;
+    } catch (e) {
+        const t = InitialData.INITIAL_TENANTS.find(t => t.id === tenantId);
+        return t || null;
+    }
+};
+
+export const updateBusinessProfile = async (tenantId: string, data: Partial<Tenant>) => {
+    try {
+        const busDocRef = doc(db, 'businesses', tenantId);
+        await setDoc(busDocRef, data, { merge: true });
+        
+        const tenantDocRef = doc(globalTenantsRef, tenantId);
+        await setDoc(tenantDocRef, data, { merge: true });
+        return true;
+    } catch (e) {
+        console.error("Error updating business profile", e);
+        return false;
+    }
+};
+
+export const getBusinessAdmins = async (tenantId: string): Promise<User[]> => {
+    return fetchWithFallback(async () => {
+        const q = query(globalUsersRef, where('tenantId', '==', tenantId));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => d.data() as User);
+    }, InitialData.INITIAL_USERS.filter(u => u.tenantId === tenantId));
+};
+
+export const addBusinessAdmin = async (user: User) => {
+    try {
+        await setDoc(doc(globalUsersRef, user.id), user);
+    } catch(e) { console.error(e); }
 };
 
 // --- DATA ACCESS LAYER ---
@@ -140,13 +175,21 @@ export const addProduct = async (product: Product) => {
 export const updateProduct = async (product: Product) => {
     try { await updateDoc(doc(getBusinessCollection(product.tenantId, 'products'), product.id), { ...product }); } catch (e) {}
 };
-export const deleteProduct = async (productId: string) => {
-    console.warn("Delete requires tenant context in new architecture");
-};
+export const deleteProduct = async (productId: string) => { console.warn("Delete requires tenant context"); };
 
-export const getTransactions = async (tenantId: string): Promise<Transaction[]> => {
+export const getTransactions = async (tenantId: string, startDate?: string, endDate?: string): Promise<Transaction[]> => {
     return fetchWithFallback(async () => {
-        const snap = await getDocs(getBusinessCollection(tenantId, 'transactions'));
+        const colRef = getBusinessCollection(tenantId, 'transactions');
+        let q = query(colRef);
+        
+        if (startDate && endDate) {
+            q = query(colRef, 
+                where('timestamp', '>=', startDate),
+                where('timestamp', '<=', endDate)
+            );
+        }
+        
+        const snap = await getDocs(q);
         return snap.docs.map(d => {
             const data = d.data();
             return {
@@ -156,6 +199,7 @@ export const getTransactions = async (tenantId: string): Promise<Transaction[]> 
                 timestamp: normalizeDate(data.timestamp),
                 customerName: normalizeString(data.customerName),
                 reference: normalizeString(data.reference),
+                type: data.type as TransactionType,
                 items: data.items ? data.items.map((i: any) => ({
                     ...i,
                     name: normalizeString(i.name),
@@ -165,7 +209,12 @@ export const getTransactions = async (tenantId: string): Promise<Transaction[]> 
                 })) : undefined
             } as Transaction;
         }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    }, InitialData.INITIAL_TRANSACTIONS.filter(t => t.tenantId === tenantId));
+    }, 
+    InitialData.INITIAL_TRANSACTIONS.filter(t => 
+        t.tenantId === tenantId && 
+        (!startDate || t.timestamp >= startDate) &&
+        (!endDate || t.timestamp <= endDate)
+    ));
 };
 
 export const addTransaction = async (transaction: Transaction) => {
@@ -209,11 +258,8 @@ export const addTransaction = async (transaction: Transaction) => {
                 });
             }
         }
-
         await batch.commit();
-    } catch (e) {
-        console.error("Error adding transaction:", e);
-    }
+    } catch (e) { console.error("Error adding transaction:", e); }
 };
 
 export const getCustomers = async (tenantId: string): Promise<Customer[]> => {
@@ -240,9 +286,19 @@ export const addCustomer = async (customer: Customer) => {
     try { await setDoc(doc(getBusinessCollection(customer.tenantId, 'customers'), customer.id), customer); } catch (e) {}
 };
 
-export const getExpenses = async (tenantId: string): Promise<Expense[]> => {
+export const getExpenses = async (tenantId: string, startDate?: string, endDate?: string): Promise<Expense[]> => {
     return fetchWithFallback(async () => {
-        const snap = await getDocs(getBusinessCollection(tenantId, 'expenditures'));
+        const colRef = getBusinessCollection(tenantId, 'expenditures');
+        let q = query(colRef);
+        
+        if (startDate && endDate) {
+            q = query(colRef, 
+                where('date', '>=', startDate),
+                where('date', '<=', endDate)
+            );
+        }
+
+        const snap = await getDocs(q);
         return snap.docs.map(d => {
             const data = d.data();
             return {
@@ -251,75 +307,19 @@ export const getExpenses = async (tenantId: string): Promise<Expense[]> => {
                 amount: normalizeNumber(data.amount),
                 date: normalizeDate(data.date),
                 category: normalizeString(data.category),
-                description: normalizeString(data.description)
+                description: normalizeString(data.description),
+                status: data.status
             } as Expense;
         }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, InitialData.INITIAL_EXPENSES.filter(e => e.tenantId === tenantId));
+    }, 
+    InitialData.INITIAL_EXPENSES.filter(e => 
+        e.tenantId === tenantId &&
+        (!startDate || e.date >= startDate) &&
+        (!endDate || e.date <= endDate)
+    ));
 };
 export const addExpense = async (expense: Expense) => {
     try { await setDoc(doc(getBusinessCollection(expense.tenantId, 'expenditures'), expense.id), expense); } catch (e) {}
-};
-
-export const getStokvelMembers = async (tenantId: string): Promise<StokvelMember[]> => {
-    return fetchWithFallback(async () => {
-        const snap = await getDocs(getBusinessCollection(tenantId, 'members'));
-        return snap.docs.map(d => {
-            const data = d.data();
-            return {
-                ...data,
-                id: d.id,
-                name: normalizeString(data.name),
-                phone: normalizeString(data.phone),
-                monthlyPledge: normalizeNumber(data.monthlyPledge),
-                totalContributed: normalizeNumber(data.totalContributed),
-                payoutQueuePosition: normalizeNumber(data.payoutQueuePosition),
-                joinDate: normalizeDate(data.joinDate)
-            } as StokvelMember;
-        });
-    }, InitialData.INITIAL_STOKVEL_MEMBERS.filter(m => m.tenantId === tenantId));
-};
-export const addStokvelMember = async (member: StokvelMember) => {
-    try { await setDoc(doc(getBusinessCollection(member.tenantId, 'members'), member.id), member); } catch (e) {}
-};
-export const updateStokvelMember = async (member: StokvelMember) => {
-    try { await updateDoc(doc(getBusinessCollection(member.tenantId, 'members'), member.id), { ...member }); } catch (e) {}
-};
-export const deleteStokvelMember = async (id: string) => { console.warn("Delete requires tenantId"); };
-
-export const getContributions = async (tenantId: string): Promise<Contribution[]> => {
-    return fetchWithFallback(async () => {
-        const snap = await getDocs(getBusinessCollection(tenantId, 'contributions'));
-        return snap.docs.map(d => {
-            const data = d.data();
-            return {
-                ...data,
-                id: d.id,
-                amount: normalizeNumber(data.amount),
-                date: normalizeDate(data.date)
-            } as Contribution;
-        });
-    }, InitialData.INITIAL_CONTRIBUTIONS.filter(c => c.tenantId === tenantId));
-};
-
-export const getLoans = async (tenantId?: string): Promise<Loan[]> => {
-    if (!tenantId) return InitialData.INITIAL_LOANS;
-    return fetchWithFallback(async () => {
-        const snap = await getDocs(getBusinessCollection(tenantId, 'loans'));
-        return snap.docs.map(d => {
-            const data = d.data();
-            return {
-                ...data,
-                id: d.id,
-                amount: normalizeNumber(data.amount),
-                interestRate: normalizeNumber(data.interestRate),
-                totalRepayable: normalizeNumber(data.totalRepayable),
-                balanceRemaining: normalizeNumber(data.balanceRemaining),
-                startDate: normalizeDate(data.startDate),
-                dueDate: normalizeDate(data.dueDate),
-                customerName: normalizeString(data.customerName)
-            } as Loan;
-        });
-    }, InitialData.INITIAL_LOANS.filter(l => l.tenantId === tenantId));
 };
 
 export const getTenants = async (): Promise<Tenant[]> => {
@@ -349,19 +349,37 @@ export const updateTenant = async (tenant: Tenant) => {
 export const getUsers = async (): Promise<User[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(globalUsersRef);
-        return snap.docs.map(d => {
-            const data = d.data();
-            return {
-                ...data,
-                id: d.id,
-                name: normalizeString(data.name),
-                email: normalizeString(data.email)
-            } as User;
-        });
+        return snap.docs.map(d => d.data() as User);
     }, InitialData.INITIAL_USERS);
 };
-export const updateUser = async (user: User) => {
-    try { await updateDoc(doc(globalUsersRef, user.id), { ...user }); } catch (e) {}
+
+export const getStokvelMembers = async (tenantId: string): Promise<StokvelMember[]> => {
+    return fetchWithFallback(async () => {
+        const snap = await getDocs(getBusinessCollection(tenantId, 'members'));
+        return snap.docs.map(d => d.data() as StokvelMember);
+    }, InitialData.INITIAL_STOKVEL_MEMBERS.filter(m => m.tenantId === tenantId));
+};
+export const addStokvelMember = async (member: StokvelMember) => {
+    try { await setDoc(doc(getBusinessCollection(member.tenantId, 'members'), member.id), member); } catch (e) {}
+};
+export const updateStokvelMember = async (member: StokvelMember) => {
+    try { await updateDoc(doc(getBusinessCollection(member.tenantId, 'members'), member.id), { ...member }); } catch (e) {}
+};
+export const deleteStokvelMember = async (id: string) => { console.warn("Delete requires tenantId"); };
+
+export const getContributions = async (tenantId: string): Promise<Contribution[]> => {
+    return fetchWithFallback(async () => {
+        const snap = await getDocs(getBusinessCollection(tenantId, 'contributions'));
+        return snap.docs.map(d => d.data() as Contribution);
+    }, InitialData.INITIAL_CONTRIBUTIONS.filter(c => c.tenantId === tenantId));
+};
+
+export const getLoans = async (tenantId?: string): Promise<Loan[]> => {
+    if (!tenantId) return InitialData.INITIAL_LOANS;
+    return fetchWithFallback(async () => {
+        const snap = await getDocs(getBusinessCollection(tenantId, 'loans'));
+        return snap.docs.map(d => d.data() as Loan);
+    }, InitialData.INITIAL_LOANS.filter(l => l.tenantId === tenantId));
 };
 
 export const getPOPs = async (): Promise<POPDocument[]> => {
@@ -374,7 +392,11 @@ export const getPOPs = async (): Promise<POPDocument[]> => {
                 id: d.id,
                 amount: normalizeNumber(data.amount),
                 timestamp: normalizeDate(data.timestamp),
-                reference: normalizeString(data.reference)
+                reference: normalizeString(data.reference),
+                uploadedBy: normalizeString(data.uploadedBy),
+                imageUrl: normalizeString(data.imageUrl),
+                status: data.status,
+                tenantId: data.tenantId
             } as POPDocument;
         });
     }, InitialData.INITIAL_POPS);
@@ -386,18 +408,7 @@ export const updatePOP = async (pop: POPDocument) => {
 export const getEmails = async (): Promise<EmailMessage[]> => {
     return fetchWithFallback(async () => {
         const snap = await getDocs(globalEmailsRef);
-        return snap.docs.map(d => {
-            const data = d.data();
-            return {
-                ...data,
-                id: d.id,
-                timestamp: normalizeDate(data.timestamp),
-                subject: normalizeString(data.subject),
-                body: normalizeString(data.body),
-                from: normalizeString(data.from),
-                to: normalizeString(data.to)
-            } as EmailMessage;
-        });
+        return snap.docs.map(d => d.data() as EmailMessage);
     }, InitialData.INITIAL_EMAILS);
 };
 export const sendEmail = async (email: EmailMessage) => {
