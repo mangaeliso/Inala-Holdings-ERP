@@ -13,7 +13,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase App (Singleton pattern)
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Cloud Firestore
 export const db: Firestore = getFirestore(app);

@@ -1,15 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { FileUploader } from '../components/ui/FileUploader';
 import { useUI } from '../context/UIContext';
-import { getBusinessProfile, updateBusinessProfile, getBusinessAdmins, addBusinessAdmin } from '../services/firestore';
-import { Tenant, User, UserRole, EmailTemplate, TenantType } from '../types';
+import { 
+    getBusinessProfile, 
+    updateBusinessProfile, 
+    getBusinessAdmins, 
+    addBusinessAdmin, 
+    uploadFileToFirebaseStorage,
+    getBillingPlans,
+    getTenantBilling,
+    getInvoices,
+    updateTenantBilling
+} from '../services/firestore';
+import { Tenant, User, UserRole, TenantType, BrandingSettings, BillingPlan, TenantBilling, Invoice } from '../types';
 import { fileToBase64 } from '../lib/utils';
 import { 
   Building2, Users, Mail, Bell, RefreshCw, ShoppingCart, Database, Shield,
-  Save, Edit2, Plus, Trash2, CheckCircle2, AlertTriangle, Eye, Send, Lock
+  Save, Edit2, Plus, Trash2, CheckCircle2, AlertTriangle, Send, Lock, CreditCard, Download, ExternalLink
 } from 'lucide-react';
 
 interface BusinessSettingsProps {
@@ -20,18 +30,25 @@ interface BusinessSettingsProps {
 const DEFAULT_PROFILE: Partial<Tenant> = {
     name: '',
     type: TenantType.BUSINESS,
-    primaryColor: '#6366f1',
-    currency: 'ZAR',
-    subscriptionTier: 'BASIC',
+    branding: {
+        displayName: '',
+        primaryColor: '#6366f1',
+        secondaryColor: '#0ea5e9',
+        logoUrl: '',
+        slogan: ''
+    },
+    access: { subscriptionTier: 'BASIC' },
     emailConfig: { senderEmail: '', templates: [] },
     notifications: {
         emailNewSale: true, smsPayment: false, dailySummary: true, 
         lowStock: true, creditWarning: true, autoMonthlyReport: true, recipients: []
     },
-    cycleSettings: { startDay: 5, endDay: 4, fiscalStartMonth: 2 },
+    cycleSettings: { startDay: 5, endDay: 4, fiscalStartMonth: 2, currencySymbol: 'R' },
     posSettings: { 
         receiptFooter: 'Thank you for your support!', taxRate: 15, 
-        enableCash: true, enableCard: true, enableCredit: true, autoPrint: false 
+        enableCash: true, enableCard: true, enableCredit: true, autoPrint: false,
+        currencySymbol: 'R',
+        numberFormat: 'R_COMMA_DECIMAL'
     }
 };
 
@@ -39,11 +56,14 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
   const [activeTab, setActiveTab] = useState('profile');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const { addToast } = useUI();
+  const { addToast, setTenantBranding } = useUI();
 
   // Master State
   const [profile, setProfile] = useState<Partial<Tenant>>(DEFAULT_PROFILE);
   const [admins, setAdmins] = useState<User[]>([]);
+  const [plans, setPlans] = useState<BillingPlan[]>([]);
+  const [billing, setBilling] = useState<TenantBilling | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   
   // Load Data
   useEffect(() => {
@@ -52,11 +72,16 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
       try {
           const tenantData = await getBusinessProfile(tenantId);
           const adminData = await getBusinessAdmins(tenantId);
+          const plansData = await getBillingPlans();
+          const billingData = await getTenantBilling(tenantId);
+          const invoicesData = await getInvoices(tenantId);
           
           if (tenantData) {
               setProfile({
                   ...DEFAULT_PROFILE,
                   ...tenantData,
+                  branding: { ...DEFAULT_PROFILE.branding, ...tenantData.branding },
+                  access: { ...DEFAULT_PROFILE.access, ...tenantData.access },
                   emailConfig: { ...DEFAULT_PROFILE.emailConfig, ...tenantData.emailConfig },
                   notifications: { ...DEFAULT_PROFILE.notifications, ...tenantData.notifications },
                   cycleSettings: { ...DEFAULT_PROFILE.cycleSettings, ...tenantData.cycleSettings },
@@ -64,6 +89,9 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
               });
           }
           setAdmins(adminData);
+          setPlans(plansData);
+          setBilling(billingData);
+          setInvoices(invoicesData);
       } catch (e) {
           console.error("Failed to load settings", e);
           addToast("Error loading settings", "error");
@@ -74,11 +102,85 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
     load();
   }, [tenantId]);
 
+  // Determine tabs based on tenant type
+  const settingsTabs = useMemo(() => {
+      const type = profile.type || TenantType.BUSINESS;
+      const baseTabs = [
+          { id: 'profile', icon: Building2, label: 'Profile & Branding' },
+          { id: 'admins', icon: Users, label: 'Admins & Roles' },
+          { id: 'billing', icon: CreditCard, label: 'Billing & Plans' }, // New tab
+          { id: 'email', icon: Mail, label: 'Email Config' },
+          { id: 'notifications', icon: Bell, label: 'Notifications' },
+      ];
+
+      if (type === TenantType.STOKVEL) {
+          baseTabs.push({ id: 'cycle', icon: RefreshCw, label: 'Contribution Cycle' });
+      } else {
+          // BUSINESS or LENDING
+          baseTabs.push({ id: 'cycle', icon: RefreshCw, label: 'Business Cycle' });
+          baseTabs.push({ id: 'pos', icon: ShoppingCart, label: 'POS Settings' });
+      }
+
+      baseTabs.push({ id: 'data', icon: Database, label: 'Data & Backup' });
+      baseTabs.push({ id: 'security', icon: Shield, label: 'Security' });
+      
+      return baseTabs;
+  }, [profile.type]);
+
   const handleSave = async () => {
       setIsSaving(true);
-      const success = await updateBusinessProfile(tenantId, profile);
+
+      // Handle Logo Upload if it's a Base64 string
+      let finalLogoUrl = profile.branding?.logoUrl;
+      if (finalLogoUrl && finalLogoUrl.startsWith('data:image')) {
+          try {
+              const fileBlob = await fetch(finalLogoUrl).then(res => res.blob());
+              const file = new File([fileBlob], `logo-${tenantId}-${Date.now()}.png`, { type: fileBlob.type });
+              finalLogoUrl = await uploadFileToFirebaseStorage(file, `tenants/${tenantId}/branding/logo.png`);
+          } catch (error) {
+              console.error("Logo upload failed", error);
+              addToast('Failed to upload logo image', 'error');
+              setIsSaving(false);
+              return;
+          }
+      }
+
+      const updatedBranding = { ...profile.branding, logoUrl: finalLogoUrl };
+
+      const dataToSave: Partial<Tenant> = {
+          id: tenantId,
+          name: profile.name,
+          type: profile.type,
+          regNumber: profile.regNumber,
+          taxNumber: profile.taxNumber,
+          address: profile.address,
+          contactNumber: profile.contactNumber,
+          email: profile.email,
+          website: profile.website,
+          category: profile.category,
+          isActive: profile.isActive,
+          target: profile.target,
+          
+          branding: updatedBranding as BrandingSettings,
+          access: profile.access,
+          emailConfig: profile.emailConfig,
+          notifications: profile.notifications,
+          posSettings: profile.posSettings,
+          cycleSettings: profile.cycleSettings,
+          dataSettings: profile.dataSettings,
+          securitySettings: profile.securitySettings,
+      };
+
+      const success = await updateBusinessProfile(tenantId, dataToSave);
       setIsSaving(false);
+      
       if (success) {
+          // Update local state to reflect the new URL instead of base64
+          setProfile(prev => ({ ...prev, branding: updatedBranding as BrandingSettings }));
+          
+          // Update global context immediately so logo/colors update in Layout
+          setTenantBranding(updatedBranding as BrandingSettings);
+          
           addToast('Settings saved successfully', 'success');
       } else {
           addToast('Failed to save settings', 'error');
@@ -87,11 +189,43 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
 
   const handleLogoUpload = async (file: File) => {
       try {
+          // Temporarily set as base64 for preview
           const base64 = await fileToBase64(file);
-          setProfile(prev => ({ ...prev, logoUrl: base64 }));
+          setProfile(prev => ({ 
+            ...prev, 
+            branding: {
+                ...prev.branding!,
+                logoUrl: base64 
+            }
+          }));
       } catch (e) {
-          addToast('Logo upload failed', 'error');
+          addToast('Logo preview failed', 'error');
       }
+  };
+
+  const handleUpdatePlan = async (plan: BillingPlan) => {
+      if (!billing) return;
+      
+      // Simulate API call to Stripe
+      setIsSaving(true);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Mock network delay
+      
+      const updatedBilling: TenantBilling = {
+          ...billing,
+          planId: plan.id,
+          status: 'active',
+          currentPeriodEnd: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString()
+      };
+      
+      await updateTenantBilling(updatedBilling);
+      setBilling(updatedBilling);
+      setIsSaving(false);
+      addToast(`Switched to ${plan.name} Plan`, 'success');
+  };
+
+  const handlePortalRedirect = () => {
+      addToast('Redirecting to secure billing portal...', 'info');
+      // In production: window.location.href = billingPortalUrl;
   };
 
   // --- Sub-Components ---
@@ -103,8 +237,8 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
                   <h4 className="font-bold text-slate-900 dark:text-white mb-4">Business Identity</h4>
                   <div className="flex flex-col items-center mb-6">
                       <div className="w-32 h-32 rounded-2xl bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden relative group">
-                          {profile.logoUrl ? (
-                              <img src={profile.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                          {profile.branding?.logoUrl ? (
+                              <img src={profile.branding.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
                           ) : (
                               <Building2 size={32} className="text-slate-300" />
                           )}
@@ -112,7 +246,7 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
                               <span className="text-white text-xs font-bold">Change</span>
                           </div>
                           <div className="absolute inset-0 opacity-0 cursor-pointer">
-                              <FileUploader onFileSelect={handleLogoUpload} label="" />
+                              <FileUploader onFileSelect={handleLogoUpload} label="" previewUrl={profile.branding?.logoUrl} />
                           </div>
                       </div>
                       <p className="text-xs text-slate-500 mt-2">Max 2MB (PNG/JPG)</p>
@@ -120,31 +254,49 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
                   
                   <div className="space-y-4">
                       <div>
-                          <label className="text-sm font-semibold">Brand Color</label>
-                          <div className="flex gap-2 mt-1">
-                              {['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444'].map(c => (
+                          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Display Name</label>
+                          <input 
+                            type="text" 
+                            className="input-field mt-1" 
+                            value={profile.branding?.displayName || ''} 
+                            onChange={e => setProfile(prev => ({...prev, branding: {...prev.branding!, displayName: e.target.value}}))}
+                          />
+                      </div>
+                      <div>
+                          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Slogan</label>
+                          <input 
+                            type="text" 
+                            className="input-field mt-1" 
+                            value={profile.branding?.slogan || ''} 
+                            onChange={e => setProfile(prev => ({...prev, branding: {...prev.branding!, slogan: e.target.value}}))}
+                          />
+                      </div>
+                      <div>
+                          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Brand Color</label>
+                          <div className="flex gap-2 mt-2">
+                              {['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'].map(c => (
                                   <button 
                                     key={c}
-                                    onClick={() => setProfile({...profile, primaryColor: c})}
-                                    className={`w-8 h-8 rounded-full border-2 ${profile.primaryColor === c ? 'border-slate-900 dark:border-white' : 'border-transparent'}`}
+                                    onClick={() => setProfile(prev => ({...prev, branding: {...prev.branding!, primaryColor: c}}))}
+                                    className={`w-8 h-8 rounded-full border-2 ${profile.branding?.primaryColor === c ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'}`}
                                     style={{ backgroundColor: c }}
                                   />
                               ))}
-                              <input type="color" value={profile.primaryColor || '#6366f1'} onChange={e => setProfile({...profile, primaryColor: e.target.value})} className="w-8 h-8 p-0 border-0 rounded-full overflow-hidden" />
+                              <input type="color" value={profile.branding?.primaryColor || '#6366f1'} onChange={e => setProfile(prev => ({...prev, branding: {...prev.branding!, primaryColor: e.target.value}}))} className="w-8 h-8 p-0 border-0 rounded-full overflow-hidden cursor-pointer" />
                           </div>
                       </div>
                   </div>
               </Card>
 
               <Card className="lg:col-span-2">
-                  <h4 className="font-bold text-slate-900 dark:text-white mb-6">Business Details</h4>
+                  <h4 className="font-bold text-slate-900 dark:text-white mb-6">Details</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-600">Business Name</label>
+                          <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Entity Name (Registered)</label>
                           <input type="text" value={profile.name || ''} onChange={e => setProfile({...profile, name: e.target.value})} className="input-field" />
                       </div>
                       <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-600">Type</label>
+                          <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Type</label>
                           <select value={profile.type} onChange={e => setProfile({...profile, type: e.target.value as any})} className="input-field">
                               <option value={TenantType.BUSINESS}>Retail Business</option>
                               <option value={TenantType.STOKVEL}>Stokvel Group</option>
@@ -152,23 +304,23 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
                           </select>
                       </div>
                       <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-600">Registration Number</label>
+                          <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Registration Number</label>
                           <input type="text" value={profile.regNumber || ''} onChange={e => setProfile({...profile, regNumber: e.target.value})} className="input-field" placeholder="e.g. 2024/123456/07" />
                       </div>
                       <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-600">Tax / VAT Number</label>
+                          <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Tax / VAT Number</label>
                           <input type="text" value={profile.taxNumber || ''} onChange={e => setProfile({...profile, taxNumber: e.target.value})} className="input-field" placeholder="Optional" />
                       </div>
                       <div className="space-y-1.5 md:col-span-2">
-                          <label className="text-sm font-medium text-slate-600">Physical Address</label>
+                          <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Physical Address</label>
                           <input type="text" value={profile.address || ''} onChange={e => setProfile({...profile, address: e.target.value})} className="input-field" />
                       </div>
                       <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-600">Contact Number</label>
+                          <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Contact Number</label>
                           <input type="tel" value={profile.contactNumber || ''} onChange={e => setProfile({...profile, contactNumber: e.target.value})} className="input-field" />
                       </div>
                       <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-slate-600">Support Email</label>
+                          <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Support Email</label>
                           <input type="email" value={profile.email || ''} onChange={e => setProfile({...profile, email: e.target.value})} className="input-field" />
                       </div>
                   </div>
@@ -226,7 +378,7 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
                                       </div>
                                   </td>
                                   <td className="px-6 py-4">
-                                      <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-bold">
+                                      <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded text-xs font-bold">
                                           {admin.role.replace('_', ' ')}
                                       </span>
                                   </td>
@@ -265,21 +417,162 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
       );
   };
 
+  const BillingTab = () => {
+      const currentPlan = plans.find(p => p.id === billing?.planId);
+
+      return (
+          <div className="space-y-8 animate-fade-in">
+              {/* Current Plan & Payment Method */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white border-none relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-32 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+                      <div className="relative z-10">
+                          <div className="flex justify-between items-start mb-6">
+                              <div>
+                                  <p className="text-indigo-200 text-xs font-bold uppercase tracking-wide">Current Plan</p>
+                                  <h3 className="text-3xl font-black mt-1">{currentPlan?.name || 'Free Tier'}</h3>
+                              </div>
+                              <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold">
+                                  {billing?.status.toUpperCase() || 'ACTIVE'}
+                              </span>
+                          </div>
+                          
+                          <div className="space-y-2 mb-6">
+                              <p className="text-sm text-indigo-100">
+                                  Renews on {new Date(billing?.currentPeriodEnd || Date.now()).toLocaleDateString()}
+                              </p>
+                              <p className="text-2xl font-bold">
+                                  {currentPlan?.currency} {currentPlan?.price} <span className="text-sm font-normal text-indigo-200">/ {currentPlan?.interval}</span>
+                              </p>
+                          </div>
+
+                          <div className="flex gap-3">
+                              <Button onClick={handlePortalRedirect} className="bg-white text-indigo-600 hover:bg-indigo-50 border-none">
+                                  Manage Subscription
+                              </Button>
+                          </div>
+                      </div>
+                  </Card>
+
+                  <Card>
+                      <h4 className="font-bold text-slate-900 dark:text-white mb-6">Payment Method</h4>
+                      <div className="flex items-center gap-4 mb-6">
+                          <div className="w-12 h-8 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 flex items-center justify-center">
+                              <CreditCard size={20} className="text-slate-500" />
+                          </div>
+                          <div>
+                              <p className="font-bold text-slate-800 dark:text-slate-200 capitalize">
+                                  {billing?.paymentMethod?.brand || 'Visa'} •••• {billing?.paymentMethod?.last4 || '4242'}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                  Expires {billing?.paymentMethod?.expMonth || 12}/{billing?.paymentMethod?.expYear || 2026}
+                              </p>
+                          </div>
+                      </div>
+                      <Button variant="outline" className="w-full" onClick={handlePortalRedirect}>
+                          Update Payment Method <ExternalLink size={14} className="ml-2"/>
+                      </Button>
+                  </Card>
+              </div>
+
+              {/* Available Plans */}
+              <div>
+                  <h4 className="font-bold text-xl text-slate-900 dark:text-white mb-6">Available Plans</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {plans.map(plan => {
+                          const isCurrent = plan.id === billing?.planId;
+                          return (
+                              <div key={plan.id} className={`relative p-6 rounded-2xl border-2 transition-all ${isCurrent ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900'}`}>
+                                  {isCurrent && (
+                                      <div className="absolute top-0 right-0 bg-indigo-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl rounded-tr-lg">
+                                          CURRENT
+                                      </div>
+                                  )}
+                                  <h5 className="font-bold text-lg text-slate-900 dark:text-white">{plan.name}</h5>
+                                  <p className="text-sm text-slate-500 mb-4 h-10">{plan.description}</p>
+                                  <div className="mb-6">
+                                      <span className="text-3xl font-black text-slate-900 dark:text-white">{plan.currency} {plan.price}</span>
+                                      <span className="text-sm text-slate-400">/{plan.interval}</span>
+                                  </div>
+                                  <ul className="space-y-2 mb-6">
+                                      {plan.features.map((f, i) => (
+                                          <li key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                              <CheckCircle2 size={14} className="text-indigo-500 shrink-0" /> {f}
+                                          </li>
+                                      ))}
+                                  </ul>
+                                  <Button 
+                                      className={`w-full ${isCurrent ? 'bg-slate-200 text-slate-500 cursor-default' : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'}`}
+                                      disabled={isCurrent}
+                                      onClick={() => handleUpdatePlan(plan)}
+                                      isLoading={isSaving && !isCurrent} // Prevent loading state on current button
+                                  >
+                                      {isCurrent ? 'Current Plan' : (plan.price > (currentPlan?.price || 0) ? 'Upgrade' : 'Downgrade')}
+                                  </Button>
+                              </div>
+                          );
+                      })}
+                  </div>
+              </div>
+
+              {/* Invoices */}
+              <Card>
+                  <div className="flex justify-between items-center mb-6">
+                      <h4 className="font-bold text-lg text-slate-900 dark:text-white">Billing History</h4>
+                      <Button variant="ghost" size="sm" onClick={handlePortalRedirect}>View All</Button>
+                  </div>
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-left">
+                          <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800/50">
+                              <tr>
+                                  <th className="px-6 py-3 rounded-l-lg">Date</th>
+                                  <th className="px-6 py-3">Amount</th>
+                                  <th className="px-6 py-3">Plan</th>
+                                  <th className="px-6 py-3">Status</th>
+                                  <th className="px-6 py-3 rounded-r-lg text-right">Invoice</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {invoices.map(inv => (
+                                  <tr key={inv.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                                      <td className="px-6 py-4 font-medium">{new Date(inv.date).toLocaleDateString()}</td>
+                                      <td className="px-6 py-4">{inv.currency} {inv.amount.toFixed(2)}</td>
+                                      <td className="px-6 py-4 text-slate-500">{inv.planName}</td>
+                                      <td className="px-6 py-4">
+                                          <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-1 rounded-full font-bold uppercase">
+                                              {inv.status}
+                                          </span>
+                                      </td>
+                                      <td className="px-6 py-4 text-right">
+                                          <a href={inv.pdfUrl} className="text-indigo-600 hover:text-indigo-700 flex items-center justify-end gap-1 text-xs font-bold">
+                                              <Download size={14} /> PDF
+                                          </a>
+                                      </td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              </Card>
+          </div>
+      );
+  };
+
   const EmailTab = () => (
       <div className="space-y-6 animate-fade-in">
           <Card>
               <h4 className="font-bold mb-4">SMTP Configuration</h4>
               <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-slate-600">SMTP Host</label>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">SMTP Host</label>
                       <input type="text" className="input-field" placeholder="smtp.gmail.com" value={profile.emailConfig?.smtpHost || ''} onChange={e => setProfile({...profile, emailConfig: {...profile.emailConfig!, smtpHost: e.target.value}})} />
                   </div>
                   <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-slate-600">Port</label>
-                      <input type="text" className="input-field" placeholder="587" value={profile.emailConfig?.smtpPort || ''} onChange={e => setProfile({...profile, emailConfig: {...profile.emailConfig!, smtpPort: e.target.value}})} />
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Port</label>
+                      <input type="number" className="input-field" placeholder="587" value={profile.emailConfig?.smtpPort || ''} onChange={e => setProfile({...profile, emailConfig: {...profile.emailConfig!, smtpPort: Number(e.target.value)}})} />
                   </div>
                   <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-slate-600">Sender Email</label>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Sender Email</label>
                       <input type="email" className="input-field" placeholder="no-reply@company.com" value={profile.emailConfig?.senderEmail || ''} onChange={e => setProfile({...profile, emailConfig: {...profile.emailConfig!, senderEmail: e.target.value}})} />
                   </div>
               </div>
@@ -292,7 +585,7 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
               </div>
               <div className="space-y-2">
                   {['Invoice', 'Receipt', 'Welcome Email', 'Payment Reminder'].map(tpl => (
-                      <div key={tpl} className="flex justify-between items-center p-3 border rounded-lg hover:bg-slate-50">
+                      <div key={tpl} className="flex justify-between items-center p-3 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
                           <span className="font-medium text-sm">{tpl}</span>
                           <button className="text-indigo-600 text-xs font-bold hover:underline">Edit</button>
                       </div>
@@ -313,10 +606,10 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
                       { key: 'lowStock', label: 'Alert when stock is low' },
                       { key: 'creditWarning', label: 'Warn when customer exceeds credit limit' }
                   ].map(item => (
-                      <div key={item.key} className="flex justify-between items-center pb-4 border-b border-slate-100 last:border-0">
+                      <div key={item.key} className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800 last:border-0">
                           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{item.label}</span>
                           <div 
-                              className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${profile.notifications?.[item.key as keyof typeof profile.notifications] ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                              className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${profile.notifications?.[item.key as keyof typeof profile.notifications] ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}
                               onClick={() => setProfile({
                                   ...profile, 
                                   notifications: { 
@@ -337,16 +630,22 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
   const CycleTab = () => (
       <div className="space-y-6 animate-fade-in">
           <Card>
-              <h4 className="font-bold mb-4">Business Cycle Configuration</h4>
-              <p className="text-sm text-slate-500 mb-6">Define your fiscal month for reporting. Default is 5th to 4th.</p>
+              <h4 className="font-bold mb-4">
+                  {profile.type === TenantType.STOKVEL ? 'Contribution Cycle Configuration' : 'Business Cycle Configuration'}
+              </h4>
+              <p className="text-sm text-slate-500 mb-6">Define your fiscal or contribution month for reporting. Default is 5th to 4th.</p>
               <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Cycle Start Day</label>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Cycle Start Day</label>
                       <input type="number" className="input-field" value={profile.cycleSettings?.startDay || 5} onChange={e => setProfile({...profile, cycleSettings: {...profile.cycleSettings!, startDay: Number(e.target.value)}})} />
                   </div>
                   <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Cycle End Day</label>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Cycle End Day</label>
                       <input type="number" className="input-field" value={profile.cycleSettings?.endDay || 4} onChange={e => setProfile({...profile, cycleSettings: {...profile.cycleSettings!, endDay: Number(e.target.value)}})} />
+                  </div>
+                  <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Currency Symbol</label>
+                      <input type="text" className="input-field" value={profile.cycleSettings?.currencySymbol || 'R'} onChange={e => setProfile({...profile, cycleSettings: {...profile.cycleSettings!, currencySymbol: e.target.value}})} />
                   </div>
               </div>
           </Card>
@@ -359,15 +658,26 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
               <h4 className="font-bold mb-4">Point of Sale Defaults</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Tax Rate (%)</label>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Tax Rate (%)</label>
                       <input type="number" className="input-field" value={profile.posSettings?.taxRate || 0} onChange={e => setProfile({...profile, posSettings: {...profile.posSettings!, taxRate: Number(e.target.value)}})} />
                   </div>
                   <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Receipt Footer Text</label>
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Receipt Footer Text</label>
                       <input type="text" className="input-field" value={profile.posSettings?.receiptFooter || ''} onChange={e => setProfile({...profile, posSettings: {...profile.posSettings!, receiptFooter: e.target.value}})} />
                   </div>
+                  <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Currency Symbol</label>
+                      <input type="text" className="input-field" value={profile.posSettings?.currencySymbol || 'R'} onChange={e => setProfile({...profile, posSettings: {...profile.posSettings!, currencySymbol: e.target.value}})} />
+                  </div>
+                  <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Number Format</label>
+                      <select className="input-field" value={profile.posSettings?.numberFormat || 'R_COMMA_DECIMAL'} onChange={e => setProfile({...profile, posSettings: {...profile.posSettings!, numberFormat: e.target.value as any}})}>
+                          <option value="R_COMMA_DECIMAL">R 1,234.56</option>
+                          <option value="COMMA_DECIMAL_R">1,234.56 R</option>
+                      </select>
+                  </div>
               </div>
-              <div className="mt-6 pt-6 border-t border-slate-100">
+              <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
                   <h5 className="font-bold text-sm mb-4">Payment Methods</h5>
                   <div className="flex gap-4">
                       {['Cash', 'Card', 'Credit', 'Mobile Money'].map(m => (
@@ -387,11 +697,11 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
               <Database size={48} className="mx-auto text-indigo-500 mb-4 opacity-50"/>
               <h3 className="font-bold text-lg mb-2">Export Business Data</h3>
               <p className="text-sm text-slate-500 mb-6">Download a full backup of sales, customers, and inventory.</p>
-              <Button variant="outline"><CheckCircle2 size={16} className="mr-2"/> Export CSV Backup</Button>
+              <Button variant="outline" className="bg-white dark:bg-slate-800"><CheckCircle2 size={16} className="mr-2"/> Export CSV Backup</Button>
           </div>
-          <div className="p-6 border border-red-200 bg-red-50 rounded-2xl">
-              <h4 className="font-bold text-red-700 mb-2 flex items-center gap-2"><AlertTriangle size={18}/> Danger Zone</h4>
-              <p className="text-sm text-red-600 mb-4">Deleting business data is irreversible.</p>
+          <div className="p-6 border border-red-200 bg-red-50 dark:bg-red-900/10 rounded-2xl">
+              <h4 className="font-bold text-red-700 dark:text-red-400 mb-2 flex items-center gap-2"><AlertTriangle size={18}/> Danger Zone</h4>
+              <p className="text-sm text-red-600 dark:text-red-300 mb-4">Deleting business data is irreversible.</p>
               <Button variant="danger" size="sm">Delete All Data</Button>
           </div>
       </div>
@@ -405,17 +715,17 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
                       <h4 className="font-bold">Two-Factor Authentication</h4>
                       <p className="text-sm text-slate-500">Require OTP for all admin logins.</p>
                   </div>
-                  <div className="w-12 h-6 bg-slate-200 rounded-full p-1 cursor-pointer"><div className="w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
+                  <div className="w-12 h-6 bg-slate-200 dark:bg-slate-700 rounded-full p-1 cursor-pointer"><div className="w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
               </div>
           </Card>
           <Card>
               <h4 className="font-bold mb-4">Audit Logs</h4>
               <div className="text-sm text-slate-500 space-y-2">
-                  <div className="flex justify-between border-b pb-2">
+                  <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
                       <span>Admin Login (User ID: u_001)</span>
                       <span>2 mins ago</span>
                   </div>
-                  <div className="flex justify-between border-b pb-2">
+                  <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
                       <span>Settings Updated</span>
                       <span>1 hour ago</span>
                   </div>
@@ -424,7 +734,7 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
       </div>
   );
 
-  if (isLoading) return <div className="p-10 text-center">Loading Settings...</div>;
+  if (isLoading) return <div className="p-10 text-center text-slate-400">Loading Settings...</div>;
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen gap-8 pb-20 animate-fade-in">
@@ -433,16 +743,7 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
             <div className="sticky top-6">
                 <h2 className="text-2xl font-bold mb-6 px-2 text-slate-900 dark:text-white">Settings</h2>
                 <div className="space-y-1">
-                    {[
-                        { id: 'profile', icon: Building2, label: 'Business Profile' },
-                        { id: 'admins', icon: Users, label: 'Admins & Roles' },
-                        { id: 'email', icon: Mail, label: 'Email Config' },
-                        { id: 'notifications', icon: Bell, label: 'Notifications' },
-                        { id: 'cycle', icon: RefreshCw, label: 'Business Cycle' },
-                        { id: 'pos', icon: ShoppingCart, label: 'POS Settings' },
-                        { id: 'data', icon: Database, label: 'Data & Backup' },
-                        { id: 'security', icon: Shield, label: 'Security' },
-                    ].map(item => (
+                    {settingsTabs.map(item => (
                         <button
                             key={item.id}
                             onClick={() => setActiveTab(item.id)}
@@ -476,6 +777,7 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId }) 
 
             {activeTab === 'profile' && <ProfileTab />}
             {activeTab === 'admins' && <AdminsTab />}
+            {activeTab === 'billing' && <BillingTab />}
             {activeTab === 'email' && <EmailTab />}
             {activeTab === 'notifications' && <NotificationsTab />}
             {activeTab === 'cycle' && <CycleTab />}

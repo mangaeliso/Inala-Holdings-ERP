@@ -8,6 +8,7 @@ import {
   UserPlus, ShoppingCart, Trash2, CheckCircle, Printer, X, 
   ChevronRight, Delete, User, Sparkles
 } from 'lucide-react';
+import { useUI } from '../context/UIContext';
 
 interface POSProps {
   tenantId?: string | null;
@@ -15,6 +16,7 @@ interface POSProps {
 }
 
 export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
+  const { currentTenant } = useUI();
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
@@ -42,27 +44,28 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
 
   useEffect(() => {
     const loadData = async () => {
-        if (tenantId) {
-            const p = await getProducts(tenantId);
+        if (currentTenant?.id && currentTenant.id !== 'global') {
+            const p = await getProducts(currentTenant.id);
             setProducts(p);
-            const c = await getCustomers(tenantId);
+            const c = await getCustomers(currentTenant.id);
             setCustomers(c);
-            const tList = await getTenants();
-            setTenant(tList.find(t => t.id === tenantId) || null);
+            setTenant(currentTenant);
         } else {
-             const p = await getProducts();
-             setProducts(p);
+             // Handle global context or unselected tenant by clearing data
+             setProducts([]);
+             setCustomers([]);
+             setTenant(null);
         }
     };
     loadData();
-  }, [tenantId]);
+  }, [currentTenant?.id]);
 
   // Derive categories
   const allCategories = Array.from(new Set(products.map(p => p.category)));
   const categories = ['All', ...allCategories];
 
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (p.sku || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCat = selectedCategory === 'All' || p.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
@@ -85,7 +88,10 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
 
   const confirmAddToCart = () => {
     if (!selectedProductForQty) return;
+    
+    // Default to 1 if empty
     const qtyVal = inputQty === '' ? 1 : parseFloat(inputQty);
+    
     if (qtyVal <= 0) return;
 
     setCart(prev => {
@@ -130,15 +136,19 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
 
   const processTransaction = async () => {
     const txId = `tx_${Date.now()}`;
+    if (!currentTenant?.id || currentTenant.id === 'global') {
+      alert("No tenant selected for transaction.");
+      return;
+    }
     await addTransaction({
         id: txId,
-        tenantId: tenantId || 'global',
+        tenantId: currentTenant.id,
         branchId: 'b_001',
         customerId: selectedCustomer?.id || 'walk_in',
         customerName: selectedCustomer?.name || 'Walk-in Customer',
         type: TransactionType.SALE,
         amount: total,
-        currency: tenant?.currency || 'ZAR',
+        currency: currentTenant.posSettings?.currencySymbol || currentTenant.cycleSettings?.currencySymbol || 'R', // Use tenant's currency from settings
         method: paymentMode!,
         status: 'COMPLETED',
         timestamp: new Date().toISOString(),
@@ -162,10 +172,12 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
 
   const handleCreateAndSelectCustomer = async () => {
       if (!customerSearch) return;
+      if (!currentTenant?.id || currentTenant.id === 'global') return;
+
       const newId = `c_${Date.now()}`;
       const newCus: Customer = {
           id: newId,
-          tenantId: tenantId!,
+          tenantId: currentTenant.id,
           name: customerSearch,
           phone: '',
           creditLimit: 1000, 
@@ -181,12 +193,12 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
       setShowCustomerModal(false);
   };
 
-  const filteredCustomers = customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()));
-  const exactMatch = customers.find(c => c.name.toLowerCase() === customerSearch.toLowerCase());
+  const filteredCustomers = customers.filter(c => (c.name || '').toLowerCase().includes(customerSearch.toLowerCase()));
+  const exactMatch = customers.find(c => (c.name || '').toLowerCase() === customerSearch.toLowerCase());
 
   const getPlaceholderColor = (name: string) => {
     const gradients = ['from-rose-400 to-orange-300', 'from-amber-400 to-yellow-300', 'from-emerald-400 to-teal-300', 'from-blue-400 to-indigo-300', 'from-violet-400 to-fuchsia-300', 'from-slate-400 to-gray-300'];
-    const index = name.length % gradients.length;
+    const index = (name.length || 0) % gradients.length;
     return `bg-gradient-to-br ${gradients[index]}`;
   };
 
@@ -226,7 +238,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
         <div className="flex-1 overflow-y-auto pr-1 pb-24">
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredProducts.map(product => {
-                const gradientClass = getPlaceholderColor(product.name);
+                const gradientClass = getPlaceholderColor(product.name || '');
                 return (
                     <div 
                         key={product.id} 
@@ -234,9 +246,9 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
                         className="group bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 cursor-pointer hover:shadow-xl hover:border-indigo-100 dark:hover:border-indigo-900/50 hover:-translate-y-1 transition-all duration-300 flex flex-col relative overflow-hidden"
                     >
                         <div className={`h-32 ${gradientClass} relative p-4 flex items-center justify-center`}>
-                            <span className="font-black text-4xl text-white opacity-40 mix-blend-overlay">{product.name.substring(0, 2).toUpperCase()}</span>
+                            <span className="font-black text-4xl text-white opacity-40 mix-blend-overlay">{(product.name || '').substring(0, 2).toUpperCase()}</span>
                             <div className="absolute top-3 right-3 bg-white/30 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg border border-white/20">
-                                {product.stockLevel} {product.unit}
+                                {(product.stockLevel || 0)} {(product.unit || '')}
                             </div>
                             <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                 <div className="bg-white text-slate-900 p-3 rounded-full shadow-lg transform scale-50 group-hover:scale-100 transition-transform">
@@ -263,7 +275,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
                                     <p className="text-[10px] text-slate-400 font-medium uppercase">Price</p>
                                     <p className="font-extrabold text-lg text-slate-900 dark:text-white">R {(product.price || 0).toFixed(2)}</p>
                                 </div>
-                                <span className="text-xs font-medium text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-lg">/{product.unit}</span>
+                                <span className="text-xs font-medium text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-lg">/{(product.unit || '')}</span>
                             </div>
                         </div>
                     </div>
@@ -294,7 +306,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
           >
               <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${selectedCustomer ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
-                      {selectedCustomer ? selectedCustomer.name.charAt(0) : <User size={18}/>}
+                      {selectedCustomer ? (selectedCustomer.name || '').charAt(0) : <User size={18}/>}
                   </div>
                   <div className="text-left">
                       <p className={`text-sm font-bold ${selectedCustomer ? 'text-indigo-900 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-300'}`}>
@@ -302,7 +314,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
                       </p>
                       {selectedCustomer && (
                           <p className="text-[10px] text-indigo-600 dark:text-indigo-400">
-                             Credit: R {((selectedCustomer.creditLimit || 0) - (selectedCustomer.currentDebt || 0)).toFixed(2)}
+                             Credit: R {(((selectedCustomer.creditLimit || 0) - (selectedCustomer.currentDebt || 0)) || 0).toFixed(2)}
                           </p>
                       )}
                   </div>
@@ -321,13 +333,13 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
             <div className="space-y-2 p-2">
                 {cart.map((item, idx) => (
                 <div key={`${item.product.id}_${idx}`} className="group relative bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm flex gap-3 animate-scale-in">
-                    <div className={`w-12 h-12 rounded-xl shrink-0 flex items-center justify-center font-bold text-lg text-white ${getPlaceholderColor(item.product.name)}`}>
-                        {item.product.name.charAt(0)}
+                    <div className={`w-12 h-12 rounded-xl shrink-0 flex items-center justify-center font-bold text-lg text-white ${getPlaceholderColor(item.product.name || '')}`}>
+                        {(item.product.name || '').charAt(0)}
                     </div>
                     
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
                         <h5 className="font-bold text-sm truncate dark:text-white">{item.product.name}</h5>
-                        <p className="text-xs text-slate-500">@{(item.product.price || 0).toFixed(2)} / {item.product.unit}</p>
+                        <p className="text-xs text-slate-500">@{(item.product.price || 0).toFixed(2)} / {(item.product.unit || '')}</p>
                     </div>
 
                     <div className="flex flex-col items-end justify-between gap-2">
@@ -335,7 +347,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
                         
                         <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
                             <button onClick={() => updateQty(item.product.id, -1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md shadow-sm transition-all text-slate-500"><Minus size={12}/></button>
-                            <span className="w-8 text-center text-xs font-bold">{item.qty}</span>
+                            <span className="w-8 text-center text-xs font-bold">{(item.qty || 0)}</span>
                             <button onClick={() => updateQty(item.product.id, 1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md shadow-sm transition-all text-slate-500"><Plus size={12}/></button>
                         </div>
                     </div>
@@ -404,7 +416,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
                                autoFocus
                                placeholder="Type client name..."
                                value={customerSearch}
-                               onChange={(e) => setCustomerSearch(e.target.value)}
+                               onChange={(e) => setSearchTerm(e.target.value)}
                                className="w-full pl-9 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
                            />
                        </div>
@@ -429,7 +441,7 @@ export const POS: React.FC<POSProps> = ({ tenantId, onBack }) => {
                                        <p className="font-bold text-slate-700 dark:text-slate-300 text-xs">{c.name}</p>
                                        <p className="text-[10px] text-slate-400">{c.phone}</p>
                                    </div>
-                                   <span className={`text-[10px] font-bold ${(c.currentDebt || 0) > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                   <span className={`text-[10px] font-bold ${((c.currentDebt || 0) > 0) ? 'text-red-500' : 'text-emerald-500'}`}>
                                        R {(c.currentDebt || 0).toFixed(2)}
                                    </span>
                                </button>

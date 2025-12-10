@@ -1,18 +1,61 @@
 import React, { useState } from 'react';
-import { INALA_HOLDINGS_TENANT } from '../services/mockData';
-import { getUsers, getTenants } from '../services/firestore';
-import { User, Tenant } from '../types';
+import { getUsers, getTenants, getGlobalSettings, getTenantBrandingSettings, ensureGlobalSettings } from '../services/firestore';
+import { User, Tenant, UserRole, TenantType, GlobalSettings as GlobalSettingsType, BrandingSettings } from '../types';
 import { Button } from '../components/ui/Button';
-import { ArrowRight, Lock, Mail, ShieldCheck, Building2 } from 'lucide-react';
+import { Modal } from '../components/ui/Modal';
+import { ArrowRight, Lock, Mail, ShieldCheck, Building2, CheckCircle } from 'lucide-react';
+import { useUI } from '../context/UIContext';
 
 interface LoginProps {
   onLogin: (user: User, tenant: Tenant) => void;
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const { setGlobalSettings, setTenantBranding, addToast } = useUI();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(''); // Not used for mock auth, but kept for UI
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Forgot Password State
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+
+  // Default Tenant structure for fallback/initial state (if Firestore is empty/loading)
+  const DEFAULT_GLOBAL_TENANT: Tenant = {
+    id: 'global',
+    name: 'INALA HOLDINGS',
+    type: TenantType.BUSINESS,
+    isActive: true,
+    category: 'Headquarters',
+    branding: { displayName: 'INALA Holdings', primaryColor: '#6366f1' }, // Minimal branding for global
+    access: { subscriptionTier: 'ENTERPRISE' },
+    cycleSettings: { startDay: 1, endDay: 31, fiscalStartMonth: 1, currencySymbol: 'R' },
+    posSettings: { receiptFooter: 'Thank you!', taxRate: 15, enableCash: true, enableCard: true, enableCredit: true, autoPrint: true, currencySymbol: 'R', numberFormat: 'R_COMMA_DECIMAL' }
+  };
+
+  const authenticateAndSetContext = async (user: User, tenant: Tenant) => {
+    // Load global settings
+    const globalConfig = await getGlobalSettings();
+    setGlobalSettings(globalConfig);
+
+    // Load tenant-specific branding
+    if (user.tenantId !== 'global') {
+        const branding = await getTenantBrandingSettings(user.tenantId);
+        setTenantBranding(branding || null);
+    } else {
+        setTenantBranding(null); // Clear tenant branding for global admin
+    }
+    
+    // Check if user is active
+    if (user.isActive === false) {
+        addToast('Account deactivated. Contact administrator.', 'error');
+        return;
+    }
+
+    onLogin(user, tenant);
+  };
+
 
   const handleManualLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,53 +67,71 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         
         if (user) {
              let tenant: Tenant | undefined;
-             if (user.tenantId === 'GLOBAL') {
-                 tenant = INALA_HOLDINGS_TENANT;
+             if (user.tenantId === 'global') {
+                 tenant = (await getTenants()).find(t => t.id === 'global') || DEFAULT_GLOBAL_TENANT;
              } else {
                  const tenants = await getTenants();
                  tenant = tenants.find(t => t.id === user.tenantId);
              }
 
              if (tenant) {
-                 onLogin(user, tenant);
+                 await authenticateAndSetContext(user, tenant);
              } else {
-                 alert('Tenant not found');
+                 addToast('Tenant not found', 'error');
              }
         } else {
-            // Fallback for demo if no email matches, log in as super admin
-            onLogin(users[0], INALA_HOLDINGS_TENANT);
+            addToast('Invalid credentials (Try Quick Access for Demo)', 'error');
         }
     } catch (error) {
         console.error(error);
-        alert('Login failed');
+        addToast('Login failed. Check console for details.', 'error');
     } finally {
         setIsLoading(false);
     }
   };
 
-  const handleQuickLogin = async (index: number) => {
+  const handleQuickLogin = async (targetUserRole: UserRole) => {
     setIsLoading(true);
     try {
+        // Ensure global settings and initial data are present first
+        const globalConfig = await ensureGlobalSettings();
+        setGlobalSettings(globalConfig); // Set global settings in context
+
         const users = await getUsers();
-        // Safe access
-        if (users.length <= index) return;
+        const tenants = await getTenants();
         
-        const user = users[index];
+        const user = users.find(u => u.role === targetUserRole);
+        if (!user) {
+          addToast(`No user found with role: ${targetUserRole}`, 'warning');
+          setIsLoading(false);
+          return;
+        }
+
         let tenant: Tenant | undefined;
-        
-        if (user.tenantId === 'GLOBAL') {
-            tenant = INALA_HOLDINGS_TENANT;
+        if (user.tenantId === 'global') {
+            tenant = tenants.find(t => t.id === 'global') || DEFAULT_GLOBAL_TENANT;
         } else {
-            const tenants = await getTenants();
             tenant = tenants.find(t => t.id === user.tenantId);
         }
 
         if (user && tenant) {
-            onLogin(user, tenant);
+            await authenticateAndSetContext(user, tenant);
+        } else {
+            addToast('User or Tenant data incomplete for quick login.', 'error');
         }
+    } catch (error) {
+        console.error(error);
+        addToast('Quick Login failed. Check console for details.', 'error');
     } finally {
         setIsLoading(false);
     }
+  };
+
+  const handlePasswordReset = (e: React.FormEvent) => {
+      e.preventDefault();
+      // Simulate password reset logic
+      setResetSent(true);
+      // In a real app with Firebase Auth, this would call sendPasswordResetEmail(auth, resetEmail)
   };
 
   return (
@@ -158,7 +219,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                             <input type="checkbox" className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
                             Remember me
                         </label>
-                        <a href="#" className="text-indigo-600 hover:text-indigo-700 font-medium">Forgot password?</a>
+                        <button type="button" onClick={() => setShowForgotModal(true)} className="text-indigo-600 hover:text-indigo-700 font-medium">Forgot password?</button>
                     </div>
                     
                     <Button type="submit" className="w-full" isLoading={isLoading}>
@@ -170,7 +231,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 text-center">Demo Quick Access</p>
                     <div className="grid grid-cols-1 gap-3">
                         <button 
-                            onClick={() => handleQuickLogin(0)}
+                            onClick={() => handleQuickLogin(UserRole.SUPER_ADMIN)}
                             className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors text-left group"
                         >
                             <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center">
@@ -183,7 +244,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         </button>
 
                         <button 
-                            onClick={() => handleQuickLogin(1)}
+                            onClick={() => handleQuickLogin(UserRole.TENANT_ADMIN)}
                             className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors text-left group"
                         >
                             <div className="w-8 h-8 rounded-full bg-sky-500 text-white flex items-center justify-center">
@@ -198,6 +259,45 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 </div>
             </div>
         </div>
+
+        {/* Forgot Password Modal */}
+        <Modal isOpen={showForgotModal} onClose={() => { setShowForgotModal(false); setResetSent(false); setResetEmail(''); }} title="Reset Password" size="sm">
+            <div className="space-y-4 pt-2">
+                {!resetSent ? (
+                    <>
+                        <p className="text-sm text-slate-500">
+                            Enter your email address and we'll send you a link to reset your password.
+                        </p>
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Email Address</label>
+                            <input 
+                                type="email" 
+                                value={resetEmail}
+                                onChange={(e) => setResetEmail(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg outline-none"
+                                placeholder="name@company.com"
+                            />
+                        </div>
+                        <Button className="w-full mt-2" onClick={handlePasswordReset}>
+                            Send Reset Link
+                        </Button>
+                    </>
+                ) : (
+                    <div className="text-center py-6">
+                        <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <CheckCircle size={32} />
+                        </div>
+                        <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Check your email</h4>
+                        <p className="text-sm text-slate-500">
+                            We have sent a password reset link to <strong>{resetEmail}</strong>.
+                        </p>
+                        <Button variant="outline" className="mt-6" onClick={() => { setShowForgotModal(false); setResetSent(false); }}>
+                            Back to Login
+                        </Button>
+                    </div>
+                )}
+            </div>
+        </Modal>
     </div>
   );
 };

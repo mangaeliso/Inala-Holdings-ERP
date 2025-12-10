@@ -1,17 +1,21 @@
-import React, { useState } from 'react';
-import { INITIAL_TENANTS } from '../services/mockData';
+import React, { useState, useEffect } from 'react';
+import { getBusinessProfile } from '../services/firestore'; // Import getBusinessProfile
 import { POS } from './POS';
 import { Inventory } from './Inventory';
 import { Reports } from './Reports';
 import { Expenses } from './Expenses';
 import { Customers } from './Customers';
+import { BusinessSettings } from './BusinessSettings'; // Import BusinessSettings
+import { Tenant } from '../types'; // Import Tenant type
+import { useUI } from '../context/UIContext'; // Import useUI
 import { 
   ShoppingCart, 
   Package, 
   BarChart2, 
   ArrowLeft,
   DollarSign,
-  Users
+  Users,
+  Settings
 } from 'lucide-react';
 
 interface BusinessDashboardProps {
@@ -21,10 +25,52 @@ interface BusinessDashboardProps {
 }
 
 export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, onBack, initialTab = 'pos' }) => {
+  const { globalSettings, currentTenant, setTenantBranding } = useUI(); // Get globalSettings and setTenantBranding
   const [activeTab, setActiveTab] = useState(initialTab);
-  const tenant = INITIAL_TENANTS.find(t => t.id === tenantId);
+  const [tenantProfile, setTenantProfile] = useState<Tenant | null>(null); // Use tenantProfile to store fetched tenant data
+  const [isLoading, setIsLoading] = useState(true);
 
-  if (!tenant) return <div>Business not found</div>;
+  useEffect(() => {
+    const loadTenantData = async () => {
+      setIsLoading(true);
+      try {
+        const profile = await getBusinessProfile(tenantId);
+        if (profile) {
+          setTenantProfile(profile);
+          // Set tenant-specific branding in UI context for this dashboard view
+          if (profile.branding) {
+            setTenantBranding(profile.branding);
+          } else {
+            // If no specific branding, clear and let global settings apply
+            setTenantBranding(null); 
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load business profile:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadTenantData();
+
+    // Cleanup function: when component unmounts or tenantId changes, reset tenant branding
+    return () => {
+        setTenantBranding(null);
+    };
+  }, [tenantId, setTenantBranding]); // Re-run when tenantId changes
+
+  if (isLoading || !tenantProfile) return (
+    <div className="h-full flex flex-col items-center justify-center text-slate-400">
+        <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p>Loading Business Dashboard...</p>
+    </div>
+  );
+
+  // Determine effective primary color (tenant override or global default)
+  const effectivePrimaryColor = tenantProfile.branding?.primaryColor || globalSettings.primaryColor;
+  const displayLogo = tenantProfile.branding?.logoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(tenantProfile.name || '')}&background=${(effectivePrimaryColor || globalSettings.primaryColor).replace('#', '')}&color=fff&size=128`;
+  const displayName = tenantProfile.branding?.displayName || tenantProfile.name;
+
 
   const tabs = [
     { id: 'pos', label: 'Point of Sale', icon: ShoppingCart },
@@ -32,6 +78,7 @@ export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, 
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'expenses', label: 'Expenses', icon: DollarSign },
     { id: 'reports', label: 'Reports', icon: BarChart2 },
+    { id: 'settings', label: 'Settings', icon: Settings }, // Added settings tab
   ];
 
   return (
@@ -47,10 +94,10 @@ export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, 
                 </button>
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 p-1 shadow-inner">
-                         <img src={tenant.logoUrl} alt={tenant.name} className="w-full h-full object-cover rounded-xl" />
+                         <img src={displayLogo} alt={displayName} className="w-full h-full object-cover rounded-xl" />
                     </div>
                     <div>
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight tracking-tight">{tenant.name}</h2>
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight tracking-tight">{displayName}</h2>
                         <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded-full">
                            Business Terminal
                         </span>
@@ -69,8 +116,9 @@ export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, 
                             ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-md transform scale-100'
                             : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-700/50'
                         }`}
+                        style={activeTab === tab.id ? { backgroundColor: effectivePrimaryColor, color: '#fff' } : {}}
                     >
-                        <tab.icon size={18} className={activeTab === tab.id ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-70'} />
+                        <tab.icon size={18} className={activeTab === tab.id ? 'text-white' : 'opacity-70'} />
                         {tab.label}
                     </button>
                 ))}
@@ -83,8 +131,9 @@ export const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ tenantId, 
                 {activeTab === 'pos' && <div className="h-full p-4 md:p-6 overflow-hidden"><POS tenantId={tenantId} /></div>}
                 {activeTab === 'customers' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Customers tenantId={tenantId} /></div>}
                 {activeTab === 'inventory' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Inventory tenantId={tenantId} /></div>}
-                {activeTab === 'reports' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Reports tenantId={tenantId} /></div>}
                 {activeTab === 'expenses' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Expenses tenantId={tenantId} /></div>}
+                {activeTab === 'reports' && <div className="h-full p-4 md:p-6 overflow-y-auto"><Reports tenantId={tenantId} /></div>}
+                {activeTab === 'settings' && <div className="h-full p-4 md:p-6 overflow-y-auto"><BusinessSettings tenantId={tenantId} /></div>}
             </div>
         </div>
     </div>

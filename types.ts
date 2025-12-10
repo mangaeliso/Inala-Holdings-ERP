@@ -1,4 +1,3 @@
-
 // Enums for standardizing statuses and roles
 export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
@@ -55,22 +54,105 @@ export enum ContributionStatus {
   PARTIAL = 'PARTIAL'
 }
 
-// Configuration Interfaces
-export interface EmailConfig {
-  smtpHost?: string;
-  smtpPort?: string;
-  smtpUser?: string;
-  senderEmail: string;
-  replyTo?: string;
-  templates: EmailTemplate[];
+// --- BILLING & SUBSCRIPTIONS ---
+export enum BillingInterval {
+  MONTHLY = 'month',
+  YEARLY = 'year'
 }
 
-export interface EmailTemplate {
+export interface BillingPlan {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  currency: string;
+  interval: BillingInterval;
+  features: string[];
+  isActive: boolean;
+  tier: 'BASIC' | 'PRO' | 'ENTERPRISE'; // Maps to AccessSettings
+}
+
+export interface Invoice {
+  id: string;
+  tenantId: string;
+  amount: number;
+  currency: string;
+  status: 'PAID' | 'OPEN' | 'VOID' | 'UNCOLLECTIBLE';
+  date: string;
+  pdfUrl?: string;
+  planName: string;
+}
+
+export interface TenantBilling {
+  tenantId: string;
+  planId: string;
+  status: 'active' | 'canceled' | 'past_due' | 'trialing';
+  currentPeriodEnd: string;
+  cancelAtPeriodEnd: boolean;
+  paymentMethod?: {
+    brand: string;
+    last4: string;
+    expMonth: number;
+    expYear: number;
+  };
+  billingEmail?: string;
+}
+
+// Global ERP Settings
+export interface GlobalSettings {
+  id: 'global'; // Fixed ID for the global settings document
+  erpName: string;
+  erpLogoUrl?: string;
+  primaryColor: string; // Global accent color
+  secondaryColor: string; // Global secondary accent color
+  supportEmail: string;
+  platformDomain: string;
+  
+  // New System Settings
+  apiKeys?: {
+    googleMaps?: string;
+    sendGrid?: string;
+    twilio?: string;
+    firebaseProject?: string; // Informational
+  };
+  system?: {
+    maintenanceMode: boolean;
+    allowSignup: boolean;
+    dataRetentionDays?: number;
+    enable2FA?: boolean;
+  };
+}
+
+// Tenant-Specific Settings Interfaces (Sub-documents)
+export interface BrandingSettings {
+  logoUrl?: string;
+  primaryColor: string; // Tenant's primary color, overrides global
+  secondaryColor?: string; // Tenant's secondary color, overrides global
+  displayName: string; // Tenant's display name
+  slogan?: string; // Short description/slogan
+}
+
+export interface AccessSettings {
+  subscriptionTier: 'BASIC' | 'PRO' | 'ENTERPRISE';
+  // Other access-related settings can go here
+}
+
+export interface EmailTemplate { // Moved template definition here
   id: string;
   name: string;
   subject: string;
   body: string;
   category: 'TRANSACTIONAL' | 'MARKETING' | 'NOTIFICATION';
+}
+
+export interface EmailSettings {
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string; // SMTP username (e.g., email address)
+  smtpPass?: string; // SMTP password (securely handled, not stored client-side)
+  senderEmail: string; // Default 'From' email address
+  replyTo?: string;
+  templates: EmailTemplate[];
 }
 
 export interface NotificationSettings {
@@ -80,50 +162,66 @@ export interface NotificationSettings {
   lowStock: boolean;
   creditWarning: boolean;
   autoMonthlyReport: boolean;
-  recipients: string[];
+  recipients: string[]; // List of emails for notifications
 }
 
 export interface POSSettings {
   receiptFooter: string;
-  taxRate: number;
+  taxRate: number; // e.g., 15 for 15%
   enableCash: boolean;
   enableCard: boolean;
   enableCredit: boolean;
   autoPrint: boolean;
+  currencySymbol: string; 
+  numberFormat: 'R_COMMA_DECIMAL' | 'COMMA_DECIMAL_R'; // R 1,234.56 vs 1,234.56 R
 }
 
 export interface BusinessCycleSettings {
-  startDay: number; // e.g., 5
-  endDay: number;   // e.g., 4
-  fiscalStartMonth: number;
+  startDay: number; // e.g., 5 (for 5th of the month)
+  endDay: number;   // e.g., 4 (for 4th of the next month)
+  fiscalStartMonth: number; // 1-12 (e.g., 1 for Jan, 7 for July)
+  currencySymbol: string; // e.g., 'R', '$'
 }
 
-// Interfaces
+export interface DataSettings {
+  backupFrequency: 'daily' | 'weekly' | 'monthly' | 'none';
+  dataRetentionPeriod: '1_year' | '5_years' | 'forever';
+}
+
+export interface SecuritySettings {
+  twoFactorAuth: boolean;
+  sessionTimeout: number; // minutes
+  ipWhitelist: string[];
+  auditLogRetentionDays: number;
+}
+
+
+// Main Tenant Interface (Stores summary & directly editable profile fields)
 export interface Tenant {
   id: string;
-  name: string;
+  name: string; // Main name for search/list - branding.displayName is for display
   type: TenantType;
-  logoUrl?: string;
-  primaryColor: string;
-  currency: string;
-  subscriptionTier: 'BASIC' | 'PRO' | 'ENTERPRISE';
   isActive: boolean;
-  target?: number; // Financial target for the stokvel
-  category?: string; // Business category
-  
-  // Detailed Profile Info
+  category?: string; // Business category (e.g., Butchery, IT)
+
+  // Direct fields (can be edited on initial profile tab)
   regNumber?: string;
   taxNumber?: string;
   address?: string;
   contactNumber?: string;
-  email?: string;
+  email?: string; // Contact email for the business/stokvel
   website?: string;
-  
-  // Settings Configs (Nested)
-  emailConfig?: EmailConfig;
+  target?: number; // Only for Stokvels (financial target)
+
+  // Nested Settings (these will be separate sub-documents in Firestore)
+  branding?: BrandingSettings;
+  access?: AccessSettings; 
+  emailConfig?: EmailSettings;
   notifications?: NotificationSettings;
   posSettings?: POSSettings;
   cycleSettings?: BusinessCycleSettings;
+  dataSettings?: DataSettings;
+  securitySettings?: SecuritySettings;
 }
 
 export interface Branch {
@@ -135,14 +233,17 @@ export interface Branch {
 
 export interface User {
   id: string;
-  tenantId: string; // 'GLOBAL' for SuperAdmin
+  tenantId: string; // 'global' for SuperAdmin, otherwise tenant ID
   branchId?: string;
   name: string;
   email: string;
-  phone?: string;
+  phone?: string; // Added phone field
   role: UserRole;
   avatarUrl?: string;
   permissions?: string[]; // E.g., ['VIEW_REPORTS', 'MANAGE_STOCK']
+  isActive?: boolean; // New field for activation status
+  hasSeenWelcome?: boolean; // New field for welcome tour
+  createdAt?: string;
 }
 
 export interface StokvelMember {
@@ -150,7 +251,7 @@ export interface StokvelMember {
   tenantId: string;
   name: string;
   phone: string;
-  email?: string; // Added email
+  email?: string;
   joinDate: string;
   monthlyPledge: number;
   totalContributed: number;
@@ -186,12 +287,11 @@ export interface Product {
   name: string;
   sku: string;
   category: string;
-  subcategory?: string; // Added subcategory
+  subcategory?: string;
   price: number;
   cost: number;
   stockLevel: number;
   minStockThreshold: number;
-  // imageUrl removed as per request
   imageUrl?: string; 
   unit: 'kg' | 'unit' | 'litre' | 'box';
 }
@@ -205,7 +305,6 @@ export interface Customer {
   creditLimit: number;
   currentDebt: number;
   lastPurchaseDate?: string;
-  // New fields matching Firestore schema
   salesCount?: number;
   totalCredit?: number; 
   timestamp?: string; 
@@ -225,8 +324,8 @@ export interface Transaction {
   id: string;
   tenantId: string;
   branchId: string;
-  customerId?: string; // Optional (walk-in)
-  customerName?: string; // Snapshot
+  customerId?: string;
+  customerName?: string;
   type: TransactionType;
   amount: number;
   currency: string;
@@ -234,7 +333,7 @@ export interface Transaction {
   status: 'COMPLETED' | 'PENDING' | 'FAILED';
   timestamp: string; // ISO date
   reference?: string;
-  receivedBy?: string; // Added receiver field
+  receivedBy?: string;
   items?: { productId: string; name: string; qty: number; price: number; subtotal: number }[];
 }
 
@@ -242,7 +341,7 @@ export interface Loan {
   id: string;
   tenantId: string;
   customerId: string;
-  customerName: string; // Denormalized for UI
+  customerName: string;
   amount: number;
   interestRate: number;
   totalRepayable: number;
@@ -275,4 +374,13 @@ export interface EmailMessage {
   timestamp: string;
   status: 'READ' | 'UNREAD' | 'SENT' | 'FAILED';
   folder: 'INBOX' | 'SENT';
+}
+
+export interface AuditLog {
+  id: string;
+  userId: string;
+  action: string;
+  details: string;
+  timestamp: string;
+  tenantId: string;
 }

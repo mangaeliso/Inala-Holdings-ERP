@@ -1,62 +1,74 @@
 import React, { useState, useEffect } from 'react';
-import { getTenants, getStokvelMembers, addTenant } from '../services/firestore';
-import { TenantType, Tenant } from '../types';
+import { getTenants, getStokvelMembers, addTenant } from '../services/firestore'; // Removed updateBusinessProfile, updateTenantBrandingSettings
+import { TenantType, Tenant, BrandingSettings, BusinessCycleSettings, AccessSettings } from '../types'; // Import additional types
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Plus, Users, ShieldCheck, Wallet, ArrowRight, Calendar, Star, Target, CheckCircle2 } from 'lucide-react';
+import { Plus, Users, Star, Target, CheckCircle2, ArrowRight, Wallet, Calendar } from 'lucide-react';
+import { useUI } from '../context/UIContext';
 
 interface StokvelsProps {
     onOpenModule?: (moduleId: string, tenantId: string) => void;
 }
 
 export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
+  const { globalSettings } = useUI();
   const [stokvels, setStokvels] = useState<Tenant[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Stats map: tenantId -> { memberCount, totalPool }
   const [stats, setStats] = useState<Record<string, {memberCount: number, totalPool: number}>>({});
   
   // Form State
-  const [formData, setFormData] = useState<Partial<Tenant>>({
+  const [formData, setFormData] = useState<Partial<Tenant & BrandingSettings & BusinessCycleSettings & AccessSettings>>({
       name: '',
       type: TenantType.STOKVEL,
-      currency: 'ZAR',
-      primaryColor: '#0ea5e9',
-      subscriptionTier: 'BASIC',
+      primaryColor: globalSettings.primaryColor,
+      secondaryColor: globalSettings.secondaryColor,
+      logoUrl: '', // This is for branding, not direct tenant property
+      displayName: '',
+      slogan: '',
       isActive: true,
-      target: 50000
+      target: 50000,
+      currencySymbol: 'ZAR', // Default currency for new stokvel
+      subscriptionTier: 'BASIC', // Default subscription for new stokvel
   });
 
   useEffect(() => {
      const load = async () => {
-         const allTenants = await getTenants();
-         const stoks = allTenants.filter(t => t.type === TenantType.STOKVEL);
-         setStokvels(stoks);
+         setIsLoading(true);
+         try {
+             const allTenants = await getTenants();
+             const stoks = allTenants.filter(t => t.type === TenantType.STOKVEL);
 
-         // Load stats for each stokvel
-         const newStats: any = {};
-         for (const s of stoks) {
-             const members = await getStokvelMembers(s.id);
-             newStats[s.id] = {
-                 memberCount: members.length,
-                 totalPool: members.reduce((sum, m) => sum + m.totalContributed, 0)
-             };
+             setStokvels(stoks);
+
+             // Load stats for each stokvel
+             const newStats: any = {};
+             for (const s of stoks) {
+                 const members = await getStokvelMembers(s.id);
+                 newStats[s.id] = {
+                     memberCount: members.length,
+                     totalPool: members.reduce((sum, m) => sum + (m.totalContributed || 0), 0)
+                 };
+             }
+             setStats(newStats);
+         } catch (error) {
+             console.error("Failed to load stokvels:", error);
+         } finally {
+             setIsLoading(false);
          }
-         setStats(newStats);
      };
      load();
-  }, [refresh]);
+  }, [refresh, globalSettings]);
 
   const handleOpenAdd = () => {
       setFormData({
-          name: '',
-          type: TenantType.STOKVEL,
-          currency: 'ZAR',
-          primaryColor: '#0ea5e9',
-          subscriptionTier: 'BASIC',
-          isActive: true,
-          target: 50000
+          name: '', type: TenantType.STOKVEL, target: 50000,
+          primaryColor: globalSettings.primaryColor, secondaryColor: globalSettings.secondaryColor,
+          logoUrl: '', displayName: '', slogan: 'Community Savings Group', isActive: true,
+          currencySymbol: 'ZAR', subscriptionTier: 'BASIC'
       });
       setShowModal(true);
   };
@@ -65,17 +77,61 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
       if (!formData.name) return;
       
       const newTenant: Tenant = {
-          ...formData,
           id: `t_stok_${Date.now()}`,
-          logoUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name || '')}&background=${formData.primaryColor?.replace('#', '')}&color=fff&size=128`
-      } as Tenant;
+          name: formData.name,
+          type: TenantType.STOKVEL,
+          isActive: formData.isActive ?? true,
+          category: 'Community', 
+          target: formData.target,
+      };
 
-      await addTenant(newTenant);
-      setShowModal(false);
-      setRefresh(prev => prev + 1);
+      const brandingToSave: BrandingSettings = {
+        logoUrl: formData.logoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.displayName || formData.name || '')}&background=${(formData.primaryColor || globalSettings.primaryColor)?.replace('#', '')}&color=fff&size=128`,
+        primaryColor: formData.primaryColor || globalSettings.primaryColor,
+        secondaryColor: formData.secondaryColor || globalSettings.secondaryColor,
+        displayName: formData.displayName || formData.name,
+        slogan: formData.slogan || 'Community Savings Group'
+      };
+
+      const accessToSave: AccessSettings = {
+        subscriptionTier: formData.subscriptionTier || 'BASIC'
+      };
+
+      const cycleSettingsToSave: BusinessCycleSettings = {
+        startDay: 25, endDay: 24, fiscalStartMonth: 1, 
+        currencySymbol: formData.currencySymbol || 'ZAR' 
+      };
+
+      try {
+          await addTenant({
+            ...newTenant,
+            branding: brandingToSave,
+            access: accessToSave,
+            cycleSettings: cycleSettingsToSave
+          });
+          
+          setShowModal(false);
+          setRefresh(prev => prev + 1);
+      } catch (error) {
+          console.error("Failed to save stokvel:", error);
+          alert("Failed to save stokvel. Check console for details.");
+      }
   };
   
-  const colors = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#1e293b'];
+  const colors = [
+    globalSettings.primaryColor, 
+    globalSettings.secondaryColor, 
+    '#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'
+  ];
+
+  if (isLoading) {
+    return (
+        <div className="h-full flex flex-col items-center justify-center text-slate-400">
+            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p>Loading stokvel groups...</p>
+        </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -96,7 +152,15 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
             {stokvels.map(stok => {
                 const sStats = stats[stok.id] || { memberCount: 0, totalPool: 0 };
                 const target = stok.target || 100000;
-                const progress = Math.min(100, (sStats.totalPool / target) * 100);
+                const progress = Math.min(100, (sStats.totalPool / (target || 1)) * 100);
+                
+                const branding = stok.branding; // Access nested branding
+                const effectivePrimaryColor = branding?.primaryColor || globalSettings.primaryColor;
+                const displayLogo = branding?.logoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(stok.name || '')}&background=${(effectivePrimaryColor || globalSettings.primaryColor)?.replace('#', '')}&color=fff&size=128`;
+                const displayName = branding?.displayName || stok.name;
+                const displaySlogan = branding?.slogan || stok.category;
+                const currencySymbol = stok.cycleSettings?.currencySymbol || 'R';
+
 
                 return (
                     <div 
@@ -105,39 +169,39 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                     >
                         {/* Top Accent Gradient */}
                         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-indigo-50 to-white dark:from-slate-800 dark:to-slate-900 opacity-50 z-0"></div>
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.03] rounded-bl-full z-0" style={{ color: stok.primaryColor }}></div>
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.03] rounded-bl-full z-0" style={{ color: effectivePrimaryColor }}></div>
 
                         {/* Content */}
                         <div className="relative z-10">
                             <div className="flex justify-between items-start mb-6">
                                 <div className="w-16 h-16 rounded-2xl p-1 bg-white dark:bg-slate-800 shadow-sm">
-                                    <img src={stok.logoUrl} alt={stok.name} className="w-full h-full rounded-xl object-cover" />
+                                    <img src={displayLogo} alt={displayName} className="w-full h-full rounded-xl object-cover" />
                                 </div>
                                 <div className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1">
                                     <Star size={12} className="text-amber-400 fill-amber-400" /> Premium
                                 </div>
                             </div>
 
-                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{stok.name}</h3>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">{displayName}</h3>
                             <p className="text-sm text-slate-500 mb-6 line-clamp-2">
-                                A community savings group dedicated to mutual financial growth and support.
+                                {displaySlogan}
                             </p>
 
                             {/* Stats Strip */}
                             <div className="grid grid-cols-3 gap-2 mb-4 border-y border-slate-100 dark:border-slate-800 py-4">
                                 <div className="text-center">
                                     <div className="text-indigo-500 mb-1 flex justify-center"><Users size={18}/></div>
-                                    <div className="font-bold text-slate-900 dark:text-white">{sStats.memberCount}</div>
+                                    <div className="font-bold text-slate-900 dark:text-white">{(sStats.memberCount || 0)}</div>
                                     <div className="text-[10px] text-slate-400 uppercase tracking-wide mt-1">Members</div>
                                 </div>
                                 <div className="text-center border-l border-slate-100 dark:border-slate-800">
                                     <div className="text-emerald-500 mb-1 flex justify-center"><Wallet size={18}/></div>
-                                    <div className="font-bold text-slate-900 dark:text-white">{(sStats.totalPool/1000).toFixed(1)}k</div>
+                                    <div className="font-bold text-slate-900 dark:text-white">{(sStats.totalPool / 1000 || 0).toFixed(1)}k</div>
                                     <div className="text-[10px] text-slate-400 uppercase tracking-wide mt-1">Pool</div>
                                 </div>
                                 <div className="text-center border-l border-slate-100 dark:border-slate-800">
                                     <div className="text-amber-500 mb-1 flex justify-center"><Calendar size={18}/></div>
-                                    <div className="font-bold text-slate-900 dark:text-white">25th</div>
+                                    <div className="font-bold text-slate-900 dark:text-white">{(stok.cycleSettings?.endDay || 0)}th</div>
                                     <div className="text-[10px] text-slate-400 uppercase tracking-wide mt-1">Payout</div>
                                 </div>
                             </div>
@@ -147,12 +211,12 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                                 <div className="flex justify-between items-center text-xs mb-1.5">
                                     <div className="flex items-center gap-1 text-slate-500">
                                         <Target size={12} />
-                                        <span>Goal: {stok.currency} {target.toLocaleString()}</span>
+                                        <span>Goal: {currencySymbol} {(target || 0).toLocaleString()}</span>
                                     </div>
-                                    <span className="font-bold text-indigo-600 dark:text-indigo-400">{progress.toFixed(1)}%</span>
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400">{(progress || 0).toFixed(1)}%</span>
                                 </div>
                                 <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-                                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }}></div>
+                                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-500" style={{ width: `${(progress || 0)}%`, backgroundColor: effectivePrimaryColor }}></div>
                                 </div>
                             </div>
 
@@ -185,8 +249,8 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
             <div className="space-y-6 pt-2">
                  {/* Branding Preview */}
                  <div className="flex justify-center mb-6">
-                    <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl font-bold text-white shadow-lg transition-colors" style={{ backgroundColor: formData.primaryColor }}>
-                        {formData.name ? formData.name.charAt(0).toUpperCase() : <Users size={32} />}
+                    <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl font-bold text-white shadow-lg transition-colors" style={{ backgroundColor: formData.primaryColor || globalSettings.primaryColor }}>
+                        {(formData.name || 'S').charAt(0).toUpperCase()}
                     </div>
                 </div>
 
@@ -195,8 +259,8 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                     <input 
                         type="text" 
                         className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-                        value={formData.name}
-                        onChange={e => setFormData({...formData, name: e.target.value})}
+                        value={formData.name || ''}
+                        onChange={e => setFormData({...formData, name: e.target.value, displayName: e.target.value})}
                         placeholder="e.g. Sisonke Savings"
                     />
                 </div>
@@ -207,7 +271,7 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                         <input 
                             type="number" 
                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-                            value={formData.target}
+                            value={formData.target || ''}
                             onChange={e => setFormData({...formData, target: Number(e.target.value)})}
                         />
                      </div>
@@ -215,8 +279,8 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Currency</label>
                         <select 
                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                            value={formData.currency}
-                            onChange={e => setFormData({...formData, currency: e.target.value})}
+                            value={formData.currencySymbol || 'ZAR'} // Default ZAR
+                            onChange={e => setFormData({...formData, currencySymbol: e.target.value})}
                         >
                             <option value="ZAR">ZAR (Rand)</option>
                             <option value="USD">USD (Dollar)</option>
@@ -238,6 +302,8 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                                 {formData.primaryColor === color && <CheckCircle2 size={16} className="text-white" />}
                             </button>
                         ))}
+                        {/* Custom color picker */}
+                        <input type="color" value={formData.primaryColor || '#6366f1'} onChange={e => setFormData({...formData, primaryColor: e.target.value})} className="w-10 h-10 p-0 border-0 rounded-full overflow-hidden" />
                     </div>
                 </div>
 

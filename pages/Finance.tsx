@@ -4,24 +4,54 @@ import { getPOPs, updatePOP } from '../services/firestore';
 import { POPStatus, POPDocument } from '../types';
 import { Check, X, Eye, Upload } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { useUI } from '../context/UIContext';
 
 export const Finance: React.FC = () => {
+  const { currentTenant } = useUI();
   const [pops, setPops] = useState<POPDocument[]>([]);
   const [selectedPop, setSelectedPop] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    getPOPs().then(setPops);
-  }, []);
+    const loadPOPs = async () => {
+      setIsLoading(true);
+      try {
+        if (!currentTenant?.id || currentTenant.id === 'global') { // Ensure tenantId is available
+          setPops([]); // Clear POPs if no tenant
+          setIsLoading(false);
+          return;
+        }
+        // Fix: Pass currentTenant.id to getPOPs
+        const data = await getPOPs(currentTenant.id);
+        setPops(data);
+      } catch (error) {
+        console.error("Failed to load POPs:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadPOPs();
+  }, [currentTenant?.id]);
 
   const handleVerify = async (id: string, status: POPStatus) => {
     const pop = pops.find(p => p.id === id);
-    if (!pop) return;
+    if (!pop || !currentTenant?.id) return;
 
     const updated = { ...pop, status };
-    await updatePOP(updated);
+    // Fix: updatePOP now accepts tenantId
+    await updatePOP(currentTenant.id, updated);
     setPops(prev => prev.map(p => p.id === id ? updated : p));
     setSelectedPop(null);
   };
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-slate-400">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p>Loading financials...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -41,7 +71,7 @@ export const Finance: React.FC = () => {
         <div className="lg:col-span-2 space-y-4">
            <h3 className="font-semibold text-lg flex items-center gap-2 text-slate-900 dark:text-white">
              Verification Queue 
-             <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full">{pops.filter(p => p.status === POPStatus.PENDING).length} Pending</span>
+             <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full">{(pops.filter(p => p.status === POPStatus.PENDING).length || 0)} Pending</span>
            </h3>
            
            {pops.map(pop => (
@@ -50,7 +80,7 @@ export const Finance: React.FC = () => {
                   className="w-full md:w-24 h-24 bg-slate-100 rounded-lg overflow-hidden cursor-pointer relative group"
                   onClick={() => setSelectedPop(pop.id)}
                 >
-                  <img src={pop.imageUrl} alt="POP" className="w-full h-full object-cover" />
+                  <img src={pop.imageUrl || ''} alt="POP" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Eye className="text-white" />
                   </div>
@@ -60,7 +90,7 @@ export const Finance: React.FC = () => {
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`px-2 py-0.5 text-xs rounded font-medium ${
                       pop.status === POPStatus.PENDING ? 'bg-amber-100 text-amber-700' :
-                      pop.status === POPStatus.VERIFIED ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      pop.status === POPStatus.VERIFIED ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
                     }`}>
                         {pop.status}
                     </span>
@@ -103,7 +133,7 @@ export const Finance: React.FC = () => {
             <Card className="bg-gradient-to-br from-slate-900 to-indigo-900 text-white">
                 <h3 className="font-bold text-lg mb-2">Total Verified</h3>
                 <p className="text-4xl font-black">
-                    R {pops.filter(p => p.status === POPStatus.VERIFIED).reduce((acc, p) => acc + (p.amount || 0), 0).toLocaleString()}
+                    R {(pops.filter(p => p.status === POPStatus.VERIFIED).reduce((acc, p) => acc + (p.amount || 0), 0) || 0).toLocaleString()}
                 </p>
                 <p className="text-indigo-200 text-sm mt-2">All time processed volume</p>
             </Card>
@@ -112,7 +142,7 @@ export const Finance: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedPop(null)}>
                     <div className="max-w-3xl w-full bg-white p-2 rounded-xl" onClick={e => e.stopPropagation()}>
                         <img 
-                            src={pops.find(p => p.id === selectedPop)?.imageUrl} 
+                            src={pops.find(p => p.id === selectedPop)?.imageUrl || ''} 
                             alt="Full POP" 
                             className="w-full max-h-[80vh] object-contain rounded-lg"
                         />

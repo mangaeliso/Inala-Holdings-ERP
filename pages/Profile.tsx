@@ -1,31 +1,47 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { User, UserRole } from '../types';
 import { Camera, Mail, Phone, Lock, User as UserIcon, Save } from 'lucide-react';
+import { useUI } from '../context/UIContext';
+import { updateUser } from '../services/firestore'; // Import updateUser from firestore
 
 interface ProfileProps {
-  user: User;
+  user: User; // The logged-in user's profile
 }
 
 export const Profile: React.FC<ProfileProps> = ({ user }) => {
-  const [formData, setFormData] = useState({
-    name: user.name,
-    email: user.email,
-    phone: '+27 82 555 1234', // Mock default
-    role: user.role
+  const { currentTenant, addToast } = useUI();
+  const [formData, setFormData] = useState<Partial<User>>({ 
+    ...user,
+    phone: user.phone || ''
   });
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
+  useEffect(() => {
+    // When the 'user' prop changes (e.g., after initial login),
+    // ensure formData is updated to reflect the most current user data.
+    setFormData({ ...user, phone: user.phone || '' });
+  }, [user]);
+
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => {
-        setIsSaving(false);
+    try {
+        if (!formData.id) {
+            addToast('User ID is missing for update.', 'error');
+            return;
+        }
+        await updateUser(formData.id, formData); // Update user in Firestore
+        addToast('Profile updated successfully', 'success');
         setIsEditing(false);
-        // In a real app, this would dispatch an update to the backend
-    }, 1000);
+    } catch (error) {
+        console.error("Failed to save profile:", error);
+        addToast('Failed to save profile', 'error');
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   return (
@@ -44,7 +60,7 @@ export const Profile: React.FC<ProfileProps> = ({ user }) => {
             {/* Profile Card */}
             <Card className="md:col-span-1 flex flex-col items-center text-center p-6">
                 <div className="relative mb-4 group cursor-pointer">
-                    <img src={user.avatarUrl} alt={user.name} className="w-32 h-32 rounded-full border-4 border-slate-100 dark:border-slate-800 object-cover" />
+                    <img src={user.avatarUrl || ''} alt={user.name} className="w-32 h-32 rounded-full border-4 border-slate-100 dark:border-slate-800 object-cover" />
                     <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <Camera className="text-white" size={24} />
                     </div>
@@ -54,7 +70,7 @@ export const Profile: React.FC<ProfileProps> = ({ user }) => {
                     {user.role.replace('_', ' ')}
                 </span>
                 <p className="text-sm text-slate-500 mt-4">
-                    Member since Nov 2024
+                    Member of {currentTenant?.name || 'N/A'}
                 </p>
             </Card>
 
@@ -72,7 +88,7 @@ export const Profile: React.FC<ProfileProps> = ({ user }) => {
                                 <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input 
                                     type="text" 
-                                    value={formData.name} 
+                                    value={formData.name || ''} 
                                     disabled={!isEditing}
                                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                                     className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
@@ -85,7 +101,7 @@ export const Profile: React.FC<ProfileProps> = ({ user }) => {
                             <div className="relative">
                                 <input 
                                     type="text" 
-                                    value={formData.role} 
+                                    value={formData.role ? formData.role.replace('_', ' ') : ''} 
                                     disabled={true}
                                     className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500 cursor-not-allowed"
                                 />
@@ -98,7 +114,7 @@ export const Profile: React.FC<ProfileProps> = ({ user }) => {
                                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input 
                                     type="email" 
-                                    value={formData.email} 
+                                    value={formData.email || ''} 
                                     disabled={!isEditing}
                                     onChange={(e) => setFormData({...formData, email: e.target.value})}
                                     className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
@@ -112,7 +128,7 @@ export const Profile: React.FC<ProfileProps> = ({ user }) => {
                                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 <input 
                                     type="tel" 
-                                    value={formData.phone} 
+                                    value={formData.phone || ''} 
                                     disabled={!isEditing}
                                     onChange={(e) => setFormData({...formData, phone: e.target.value})}
                                     className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-60 disabled:cursor-not-allowed"

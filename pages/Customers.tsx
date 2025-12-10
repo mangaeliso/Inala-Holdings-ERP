@@ -5,12 +5,14 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Search, Phone, ShoppingBag, Clock, User, CreditCard, TrendingDown } from 'lucide-react';
+import { useUI } from '../context/UIContext'; // Import useUI
 
 interface CustomersProps {
   tenantId: string;
 }
 
 export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
+  const { currentTenant } = useUI(); // Get currentTenant
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -29,7 +31,12 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
     const loadCustomers = async () => {
       try {
         setIsLoading(true);
-        const data = await getCustomers(tenantId);
+        if (!currentTenant?.id || currentTenant.id === 'global') {
+          setCustomers([]); // Clear customers if no tenant
+          setIsLoading(false);
+          return;
+        }
+        const data = await getCustomers(currentTenant.id);
         setCustomers(data);
       } catch (err) {
         setError('Failed to load customers');
@@ -39,10 +46,10 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
       }
     };
     loadCustomers();
-  }, [tenantId]);
+  }, [currentTenant?.id]); // Re-fetch when tenant changes
 
   const filteredCustomers = customers.filter(c => 
-     c.name.toLowerCase().includes(searchTerm.toLowerCase())
+     (c.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handlePayClick = (customer: Customer) => {
@@ -58,7 +65,7 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
   const handlePaymentTypeChange = (type: 'FULL' | 'PARTIAL') => {
       setPaymentType(type);
       if (type === 'FULL' && selectedCustomer) {
-          const debt = selectedCustomer.totalCredit || selectedCustomer.currentDebt || 0;
+          const debt = (selectedCustomer.totalCredit || 0) + (selectedCustomer.currentDebt || 0);
           setPaymentAmount(debt.toFixed(2));
       } else {
           setPaymentAmount('');
@@ -67,18 +74,19 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
 
   const processPayment = async () => {
       if (!selectedCustomer) return;
-      
+      if (!currentTenant?.id || currentTenant.id === 'global') return; // Ensure tenantId is available
+
       await addTransaction({
           id: `tx_pay_${Date.now()}`,
-          tenantId,
+          tenantId: currentTenant.id,
           branchId: 'b_001',
           customerId: selectedCustomer.id,
           customerName: selectedCustomer.name,
           type: TransactionType.DEBT_PAYMENT,
-          amount: Number(paymentAmount),
-          currency: 'ZAR',
+          amount: Number(paymentAmount || 0),
+          currency: currentTenant.cycleSettings?.currencySymbol || 'R',
           method: paymentMethod,
-          status: 'PENDING', 
+          status: 'COMPLETED', 
           timestamp: new Date(paymentDate).toISOString(),
           reference: 'DEBT-PAYMENT',
           receivedBy: receiver
@@ -130,7 +138,7 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
 
        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
            {filteredCustomers.map(customer => {
-               const debt = customer.totalCredit ?? customer.currentDebt ?? 0;
+               const debt = (customer.totalCredit ?? 0) + (customer.currentDebt ?? 0); // Safe sum
                return (
                <div key={customer.id} className="group relative bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-100 dark:border-slate-800 shadow-soft hover:shadow-lg transition-all duration-300">
                    {/* Debt Indicator Strip */}
@@ -139,11 +147,11 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                    <div className="pl-4 flex justify-between items-start mb-4">
                        <div className="flex items-center gap-4">
                             <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold border-4 border-white dark:border-slate-800 shadow-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300`}>
-                                {customer.name.charAt(0)}
+                                {(customer.name || '').charAt(0)}
                             </div>
                            <div>
                                <h3 className="font-bold text-lg text-slate-900 dark:text-white leading-tight">{customer.name}</h3>
-                               <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><ShoppingBag size={12}/> {customer.salesCount || 0} Sales</p>
+                               <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><ShoppingBag size={12}/> {(customer.salesCount || 0)} Sales</p>
                            </div>
                        </div>
                    </div>
@@ -163,7 +171,7 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Total Credit</p>
                                <p className={`text-2xl font-extrabold flex items-center gap-2 ${debt > 0 ? 'text-amber-600' : 'text-slate-600'}`}>
                                    R {(debt || 0).toFixed(2)}
-                               </p>
+                                </p>
                            </div>
                            {debt > 0 ? (
                                <Button size="sm" onClick={() => handlePayClick(customer)} className="shadow-lg shadow-amber-500/20 bg-amber-600 hover:bg-amber-700 text-white border-none">
@@ -191,7 +199,7 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                 <div className="text-center bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                     <p className="text-slate-500 text-xs uppercase font-bold tracking-wide mb-1">Total Credit / Debt</p>
                     <p className="text-3xl font-extrabold text-amber-500">
-                        R {(selectedCustomer?.totalCredit ?? selectedCustomer?.currentDebt ?? 0).toFixed(2)}
+                        R {((selectedCustomer?.totalCredit ?? 0) + (selectedCustomer?.currentDebt ?? 0)).toFixed(2)}
                     </p>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mt-2">{selectedCustomer?.name}</p>
                 </div>
@@ -232,10 +240,10 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                         <div className="space-y-1.5">
                             <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Date</label>
                             <input 
-                                type="date" 
-                                value={paymentDate} 
+                                type="date"
+                                value={paymentDate}
                                 onChange={(e) => setPaymentDate(e.target.value)}
-                                className="w-full px-3 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
                             />
                         </div>
                         <div className="space-y-1.5">
@@ -243,7 +251,7 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                             <select 
                                 value={paymentMethod}
                                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                                className="w-full px-3 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
                             >
                                 <option value={PaymentMethod.CASH}>Cash</option>
                                 <option value={PaymentMethod.EFT}>EFT</option>
@@ -252,21 +260,24 @@ export const Customers: React.FC<CustomersProps> = ({ tenantId }) => {
                         </div>
                     </div>
 
-                     <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Receiver (Staff)</label>
-                        <input 
-                            type="text"
-                            value={receiver}
-                            onChange={(e) => setReceiver(e.target.value)}
-                            placeholder="Enter your name"
-                            className="w-full px-4 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Received By</label>
+                        <div className="relative">
+                            <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input 
+                                type="text"
+                                value={receiver}
+                                onChange={(e) => setReceiver(e.target.value)}
+                                className="w-full pl-10 pr-4 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                placeholder="Staff Name"
+                            />
+                        </div>
                     </div>
-                </div>
 
-                <Button className="w-full h-12 text-lg font-bold shadow-lg shadow-indigo-500/20" onClick={processPayment} disabled={!paymentAmount || !receiver}>
-                    Confirm Payment
-                </Button>
+                    <Button className="w-full h-12 text-lg font-bold shadow-lg shadow-indigo-500/20" onClick={processPayment} disabled={!paymentAmount || !receiver}>
+                        Confirm Payment
+                    </Button>
+                </div>
             </div>
        </Modal>
     </div>

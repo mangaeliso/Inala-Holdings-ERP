@@ -73,6 +73,24 @@
           -ms-overflow-style: none;
           scrollbar-width: none;
       }
+
+      /* Dynamic Brand Colors */
+      .text-brand-primary { color: var(--primary-brand-color); }
+      .bg-brand-primary { background-color: var(--primary-brand-color); }
+      .border-brand-primary { border-color: var(--primary-brand-color); }
+      .ring-brand-primary { --tw-ring-color: var(--primary-brand-color); }
+      .hover\\:text-brand-primary:hover { color: var(--primary-brand-color); }
+      .hover\\:bg-brand-primary:hover { background-color: var(--primary-brand-color); }
+      .shadow-brand-primary { --tw-shadow-color: var(--primary-brand-color); }
+      
+      .text-brand-secondary { color: var(--secondary-brand-color); }
+      .bg-brand-secondary { background-color: var(--secondary-brand-color); }
+      .border-brand-secondary { border-color: var(--secondary-brand-color); }
+      .ring-brand-secondary { --tw-ring-color: var(--secondary-brand-color); }
+      .hover\\:text-brand-secondary:hover { color: var(--secondary-brand-color); }
+      .hover\\:bg-brand-secondary:hover { background-color: var(--secondary-brand-color); }
+      .shadow-brand-secondary { --tw-shadow-color: var(--secondary-brand-color); }
+
     </style>
     <script>
         tailwind.config = {
@@ -115,6 +133,7 @@
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
     "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
     "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+    "firebase/storage": "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js",
     "framer-motion": "https://esm.sh/framer-motion@10.16.4?external=react,react-dom",
     "clsx": "https://esm.sh/clsx@2.0.0",
     "tailwind-merge": "https://esm.sh/tailwind-merge@1.14.0",

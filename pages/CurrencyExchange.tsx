@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -11,6 +10,7 @@ import {
   Globe,
   Wallet
 } from 'lucide-react';
+import { useUI } from '../context/UIContext'; // Import useUI
 
 const SUPPORTED_CURRENCIES = [
   { code: 'ZAR', name: 'South African Rand', flag: '🇿🇦', symbol: 'R' },
@@ -39,7 +39,7 @@ const INITIAL_RATES_TO_ZAR: Record<string, number> = {
   'CNY': 0.38
 };
 
-// Mock Wallet Holdings
+// Mock Wallet Holdings - These would come from Firestore in a real app
 const MOCK_HOLDINGS: Record<string, number> = {
     'USD': 50000,
     'ZAR': 125000,
@@ -47,11 +47,19 @@ const MOCK_HOLDINGS: Record<string, number> = {
 };
 
 export const CurrencyExchange: React.FC = () => {
+  const { currentTenant } = useUI(); // Get currentTenant
   const [rates, setRates] = useState(INITIAL_RATES_TO_ZAR);
   const [amount, setAmount] = useState<string>('1');
-  const [fromCurrency, setFromCurrency] = useState('USD');
+  const [fromCurrency, setFromCurrency] = useState(currentTenant?.currency || 'USD'); // Use tenant's currency as default
   const [toCurrency, setToCurrency] = useState('ZAR');
   const [lastUpdated, setLastUpdated] = useState(new Date());
+
+  // Update default currencies when tenant changes
+  useEffect(() => {
+    if (currentTenant?.currency) {
+      setFromCurrency(currentTenant.currency);
+    }
+  }, [currentTenant?.currency]);
 
   // Simulate live tickers
   useEffect(() => {
@@ -61,7 +69,7 @@ export const CurrencyExchange: React.FC = () => {
             Object.keys(newRates).forEach(key => {
                 if (key !== 'ZAR') { // Keep base anchor stable for mock
                   const change = (Math.random() - 0.5) * 0.005; // Small random fluctuation
-                  newRates[key] = newRates[key] * (1 + change);
+                  newRates[key] = (newRates[key] || 0) * (1 + change); // Safe access
                 }
             });
             return newRates;
@@ -76,26 +84,18 @@ export const CurrencyExchange: React.FC = () => {
       setToCurrency(fromCurrency);
   };
 
-  // Conversion Logic: 
-  // Rate_From = X units per 1 ZAR
-  // Rate_To = Y units per 1 ZAR
-  // Amount in ZAR = Amount / Rate_From
-  // Converted Amount = Amount in ZAR * Rate_To
-  // Simplified: Amount * (Rate_To / Rate_From)
-  
-  const rateFrom = rates[fromCurrency];
-  const rateTo = rates[toCurrency];
+  const rateFrom = rates[fromCurrency] || 1; // Default to 1 if not found
+  const rateTo = rates[toCurrency] || 1;     // Default to 1 if not found
   const exchangeRate = rateTo / rateFrom;
   
   const convertedAmount = parseFloat(amount || '0') * exchangeRate;
 
   // Portfolio Valuation Logic
-  // Convert each holding to ZAR first (Holding / Rate_Code), then to Target (Total_ZAR * Rate_Target)
   const totalPortfolioValue = Object.entries(MOCK_HOLDINGS).reduce((acc, [code, qty]) => {
       const rateCode = rates[code] || 1;
-      const valInZar = qty / rateCode;
+      const valInZar = (qty || 0) / rateCode; // Safe access
       return acc + valInZar;
-  }, 0) * rateTo;
+  }, 0) * rateTo; // Convert final ZAR value to target 'toCurrency'
 
   const fromSymbol = SUPPORTED_CURRENCIES.find(c => c.code === fromCurrency)?.symbol;
   const toSymbol = SUPPORTED_CURRENCIES.find(c => c.code === toCurrency)?.symbol;
@@ -183,7 +183,7 @@ export const CurrencyExchange: React.FC = () => {
                                         </select>
                                     </div>
                                     <div className="text-3xl font-black truncate">
-                                        {convertedAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                        {(convertedAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                                     </div>
                                     <p className="text-xs text-indigo-200 font-medium truncate mt-1">
                                         {SUPPORTED_CURRENCIES.find(c => c.code === toCurrency)?.name}
@@ -196,9 +196,9 @@ export const CurrencyExchange: React.FC = () => {
                     <div className="flex flex-col md:flex-row justify-between items-center text-sm bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl">
                         <span className="text-slate-500 mb-2 md:mb-0">Exchange Rate</span>
                         <div className="flex items-center gap-2 font-mono font-bold text-slate-700 dark:text-slate-300">
-                             1 {fromCurrency} = {exchangeRate.toFixed(4)} {toCurrency}
+                             1 {fromCurrency} = {(exchangeRate || 0).toFixed(4)} {toCurrency}
                              <span className="text-slate-300">|</span>
-                             1 {toCurrency} = {(1/exchangeRate).toFixed(4)} {fromCurrency}
+                             1 {toCurrency} = {((1/(exchangeRate || 1)) || 0).toFixed(4)} {fromCurrency}
                         </div>
                     </div>
                 </div>
@@ -208,8 +208,8 @@ export const CurrencyExchange: React.FC = () => {
                     <h3 className="font-bold text-lg mb-4 text-slate-900 dark:text-white">Live Rates (vs {fromCurrency})</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                         {SUPPORTED_CURRENCIES.filter(c => c.code !== fromCurrency).slice(0, 6).map(currency => {
-                            const thisRate = rates[currency.code] / rates[fromCurrency];
-                            const prevRate = INITIAL_RATES_TO_ZAR[currency.code] / INITIAL_RATES_TO_ZAR[fromCurrency];
+                            const thisRate = (rates[currency.code] || 0) / (rates[fromCurrency] || 1); // Safe access
+                            const prevRate = (INITIAL_RATES_TO_ZAR[currency.code] || 0) / (INITIAL_RATES_TO_ZAR[fromCurrency] || 1); // Safe access
                             const isUp = thisRate >= prevRate;
 
                             return (
@@ -222,10 +222,10 @@ export const CurrencyExchange: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="font-mono font-bold text-slate-900 dark:text-white">{thisRate.toFixed(3)}</p>
+                                        <p className="font-mono font-bold text-slate-900 dark:text-white">{(thisRate || 0).toFixed(3)}</p>
                                         <div className={`text-[10px] font-bold flex items-center justify-end ${isUp ? 'text-emerald-500' : 'text-rose-500'}`}>
                                             {isUp ? <TrendingUp size={10} className="mr-0.5" /> : <TrendingDown size={10} className="mr-0.5" />}
-                                            {Math.abs((thisRate - prevRate) / prevRate * 100).toFixed(2)}%
+                                            {Math.abs(((thisRate || 0) - (prevRate || 0)) / (prevRate || 1) * 100).toFixed(2)}%
                                         </div>
                                     </div>
                                 </div>
@@ -245,7 +245,7 @@ export const CurrencyExchange: React.FC = () => {
                       <div className="space-y-6">
                            <div>
                                <p className="text-indigo-300 text-xs mb-1">Total in Base ({toCurrency})</p>
-                               <h3 className="text-3xl font-black">{toSymbol} {totalPortfolioValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</h3>
+                               <h3 className="text-3xl font-black">{toSymbol} {(totalPortfolioValue || 0).toLocaleString(undefined, {maximumFractionDigits: 0})}</h3>
                            </div>
                            <div className="w-full h-px bg-white/10"></div>
                            <div className="space-y-3">
@@ -254,21 +254,21 @@ export const CurrencyExchange: React.FC = () => {
                                         <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">🇺🇸</div>
                                         <span className="font-bold">USD</span>
                                     </div>
-                                    <span className="font-mono">$ {MOCK_HOLDINGS['USD'].toLocaleString()}</span>
+                                    <span className="font-mono">$ {(MOCK_HOLDINGS['USD'] || 0).toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">🇿🇦</div>
                                         <span className="font-bold">ZAR</span>
                                     </div>
-                                    <span className="font-mono">R {MOCK_HOLDINGS['ZAR'].toLocaleString()}</span>
+                                    <span className="font-mono">R {(MOCK_HOLDINGS['ZAR'] || 0).toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">🇲🇿</div>
                                         <span className="font-bold">MZN</span>
                                     </div>
-                                    <span className="font-mono">MT {MOCK_HOLDINGS['MZN'].toLocaleString()}</span>
+                                    <span className="font-mono">MT {(MOCK_HOLDINGS['MZN'] || 0).toLocaleString()}</span>
                                 </div>
                            </div>
                       </div>
