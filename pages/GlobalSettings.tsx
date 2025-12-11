@@ -9,16 +9,18 @@ import {
   updateUser, deleteUser, updateTenant, logAudit, getBillingPlans, saveBillingPlan,
   updateSystemBranding, triggerSystemEmail
 } from '../services/firestore';
-import { GlobalSettings as GlobalSettingsType, Tenant, User, UserRole, BillingPlan, BillingInterval } from '../types';
+import { GlobalSettings as GlobalSettingsType, Tenant, User, UserRole, BillingPlan, BillingInterval, TenantType } from '../types';
 import { fileToBase64 } from '../lib/utils';
 import { checkDBConnection } from '../lib/db';
 import { 
   Building2, Save, CheckCircle2, AlertCircle, Upload, Plus, Edit2,
   Settings as SettingsIcon, LayoutDashboard, DollarSign, Users as UsersIcon, Mail, ShieldAlert,
-  Database, Server, Key, ToggleLeft, ToggleRight, Eye, Trash2, Lock, UserPlus, Power, Check, CreditCard
+  Database, Server, Key, ToggleLeft, ToggleRight, Eye, Trash2, Lock, UserPlus, Power, Check, CreditCard,
+  ArrowLeft, Store, Briefcase, Layers
 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { Skeleton, CardSkeleton } from '../components/ui/Skeleton';
+import { BusinessSettings } from './BusinessSettings';
 
 
 export const GlobalSettings: React.FC = () => {
@@ -29,8 +31,14 @@ export const GlobalSettings: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
-  const [activeTab, setActiveTab] = useState<'general' | 'tenants' | 'users' | 'system' | 'billing' | 'support'>('general');
+  
+  // Expanded Tabs
+  const [activeTab, setActiveTab] = useState<'general' | 'tenants' | 'businesses' | 'stokvels' | 'users' | 'system' | 'billing' | 'support'>('general');
   const [dbStatus, setDbStatus] = useState<{ok: boolean, latency?: number, message?: string}>({ok: false});
+
+  // Super Admin Override Mode State
+  const [overrideMode, setOverrideMode] = useState(false);
+  const [targetTenantId, setTargetTenantId] = useState<string | null>(null);
 
   // User Management State
   const [showUserModal, setShowUserModal] = useState(false);
@@ -81,19 +89,21 @@ export const GlobalSettings: React.FC = () => {
 
   const handleSave = async () => {
     setIsSaving(true);
-    let updatedLogoUrl = formData.erpLogoUrl;
+    // Ensure updatedLogoUrl is a string, preventing circular objects from entering logic
+    let updatedLogoUrl = typeof formData.erpLogoUrl === 'string' ? formData.erpLogoUrl : '';
 
     // Handle logo upload to Firebase Storage if it's a base64 string (newly uploaded)
     if (updatedLogoUrl && updatedLogoUrl.startsWith('data:image')) {
         try {
             const fileBlob = await fetch(updatedLogoUrl).then(res => res.blob());
-            const file = new File([fileBlob], `systemLogo.png`, { type: fileBlob.type });
-            // Upload to branding/systemLogo.png as requested
-            const downloadURL = await uploadFileToFirebaseStorage(file, `branding/systemLogo.png`);
-            updatedLogoUrl = downloadURL;
+            // Detect extension from mime type
+            const ext = fileBlob.type.split('/')[1] || 'png';
+            const filename = `systemLogo.${ext === 'svg+xml' ? 'svg' : ext}`;
+            const file = new File([fileBlob], filename, { type: fileBlob.type });
             
-            // Save to system_settings/branding doc as requested
-            await updateSystemBranding({ logoUrl: downloadURL });
+            // Upload to branding/systemLogo.[ext]
+            const downloadURL = await uploadFileToFirebaseStorage(file, `branding/${filename}`);
+            updatedLogoUrl = downloadURL;
             
             addToast('System logo uploaded successfully', 'success');
         } catch (uploadError) {
@@ -104,12 +114,38 @@ export const GlobalSettings: React.FC = () => {
         }
     }
 
-    const updatedSettings = { ...formData, erpLogoUrl: updatedLogoUrl };
-    const success = await updateGlobalSettings(updatedSettings);
+    // Save to system_settings/branding doc as requested, ensuring sync
+    await updateSystemBranding({ logoUrl: updatedLogoUrl });
+
+    // Explicitly construct the payload to strip out any potential circular references (like DOM events)
+    // that might have inadvertently polluted the formData state.
+    const safeSettings: GlobalSettingsType = {
+        id: 'global',
+        erpName: formData.erpName || '',
+        erpLogoUrl: updatedLogoUrl,
+        primaryColor: formData.primaryColor || '',
+        secondaryColor: formData.secondaryColor || '',
+        supportEmail: formData.supportEmail || '',
+        platformDomain: formData.platformDomain || '',
+        apiKeys: {
+            googleMaps: formData.apiKeys?.googleMaps || '',
+            sendGrid: formData.apiKeys?.sendGrid || '',
+            twilio: formData.apiKeys?.twilio || '',
+            firebaseProject: formData.apiKeys?.firebaseProject || ''
+        },
+        system: {
+            maintenanceMode: !!formData.system?.maintenanceMode,
+            allowSignup: !!formData.system?.allowSignup,
+            dataRetentionDays: Number(formData.system?.dataRetentionDays) || 0,
+            enable2FA: !!formData.system?.enable2FA
+        }
+    };
+
+    const success = await updateGlobalSettings(safeSettings);
     setIsSaving(false);
     if (success) {
-      setGlobalSettings(updatedSettings as GlobalSettingsType); // Update UIContext immediately
-      setFormData(updatedSettings as GlobalSettingsType); // Update local state
+      setGlobalSettings(safeSettings); // Update UIContext immediately
+      setFormData(safeSettings); // Update local state with sanitized data
       addToast('Global settings saved successfully', 'success');
     } else {
       addToast('Failed to save global settings', 'error');
@@ -119,7 +155,10 @@ export const GlobalSettings: React.FC = () => {
   const handleLogoUpload = async (file: File) => {
     try {
       const base64 = await fileToBase64(file);
-      setFormData(prev => ({ ...prev, erpLogoUrl: base64 }));
+      // Ensure we are setting a string
+      if (typeof base64 === 'string') {
+          setFormData(prev => ({ ...prev, erpLogoUrl: base64 }));
+      }
     } catch (e) {
       addToast('Logo preview failed', 'error');
     }
@@ -197,6 +236,16 @@ export const GlobalSettings: React.FC = () => {
       addToast(`Tenant ${newStatus ? 'activated' : 'deactivated'}`, 'success');
   };
 
+  const handleEditTenantSettings = (tenantId: string) => {
+      setTargetTenantId(tenantId);
+      setOverrideMode(true);
+  };
+
+  const handleCloseOverride = () => {
+      setOverrideMode(false);
+      setTargetTenantId(null);
+  };
+
   // --- Billing Plan Handlers ---
   const handleOpenPlanModal = (plan: BillingPlan | null = null) => {
       setPlanFormData(plan ? { ...plan } : { currency: 'ZAR', interval: BillingInterval.MONTHLY, isActive: true, features: [] });
@@ -226,6 +275,75 @@ export const GlobalSettings: React.FC = () => {
       addToast('Plan saved successfully', 'success');
   };
 
+  // --- Render Helpers ---
+  const renderTenantList = (filterType?: TenantType | 'ALL') => {
+      const filteredTenants = filterType && filterType !== 'ALL' 
+          ? tenants.filter(t => t.type === filterType || (filterType === TenantType.BUSINESS && t.type === TenantType.LENDING)) 
+          : tenants;
+
+      return (
+        <Card noPadding className="overflow-hidden">
+            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                <h4 className="font-bold text-lg text-slate-900 dark:text-white">
+                    {filterType === 'ALL' || !filterType ? 'All Tenants' : 
+                     filterType === TenantType.STOKVEL ? 'Global Stokvel Settings' : 'Global Business Settings'}
+                </h4>
+                <p className="text-sm text-slate-500">
+                    {filterType === TenantType.STOKVEL 
+                        ? 'Manage settings for all community savings groups.' 
+                        : filterType === TenantType.BUSINESS 
+                        ? 'Manage settings for all retail businesses and lenders.'
+                        : 'Manage all entities registered on the platform.'}
+                </p>
+            </div>
+            <div className="p-4">
+                {filteredTenants.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">No matching entities found.</div>
+                ) : (
+                    <div className="space-y-3">
+                        {filteredTenants.map(tenant => (
+                            <div key={tenant.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 hover:shadow-sm transition-shadow">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center">
+                                        {tenant.branding?.logoUrl && !tenant.branding.logoUrl.includes('ui-avatars') ? (
+                                            <img src={tenant.branding.logoUrl} alt={tenant.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Building2 size={18} className="text-slate-400" />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                            {tenant.branding?.displayName || tenant.name}
+                                            {!tenant.isActive && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Inactive</span>}
+                                        </p>
+                                        <p className="text-xs text-slate-500">{tenant.type} • {tenant.category}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button 
+                                        onClick={() => toggleTenantStatus(tenant)}
+                                        className={`text-[10px] px-2 py-1 rounded font-bold uppercase transition-colors ${tenant.isActive ? 'bg-emerald-100 text-emerald-700 hover:bg-red-100 hover:text-red-700' : 'bg-red-100 text-red-700 hover:bg-emerald-100 hover:text-emerald-700'}`}
+                                    >
+                                        {tenant.isActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                    <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleEditTenantSettings(tenant.id)}
+                                        className="gap-2 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 dark:hover:bg-indigo-900/30 dark:hover:border-indigo-800"
+                                    >
+                                        <Edit2 size={14} /> Edit Settings
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </Card>
+      );
+  }
+
   // Access Control View
   if (currentUser?.role !== UserRole.SUPER_ADMIN) {
       return (
@@ -250,6 +368,46 @@ export const GlobalSettings: React.FC = () => {
     );
   }
 
+  // Override Mode View (BusinessSettings Component)
+  if (overrideMode && targetTenantId) {
+      return (
+          <div className="min-h-screen pb-20 animate-fade-in flex flex-col">
+              <div className="sticky top-0 z-20 bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur-md py-4 mb-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center px-4 md:px-0">
+                  <div className="flex items-center gap-4">
+                      <Button variant="outline" onClick={handleCloseOverride} className="bg-white dark:bg-slate-800">
+                          <ArrowLeft size={16} className="mr-2" /> Back to Global List
+                      </Button>
+                      <div>
+                          <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                              Tenant Settings Override
+                              <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <ShieldAlert size={12}/> Super Admin
+                              </span>
+                          </h2>
+                          <p className="text-xs text-slate-500">
+                              Editing settings for tenant ID: <span className="font-mono">{targetTenantId}</span>
+                          </p>
+                      </div>
+                  </div>
+              </div>
+              
+              <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-200 dark:border-amber-800 mb-6 flex items-start gap-3">
+                  <AlertCircle className="text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" size={20}/>
+                  <div>
+                      <h4 className="font-bold text-amber-800 dark:text-amber-400 text-sm">Caution: Direct Override Mode</h4>
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                          You are modifying live tenant configuration. Changes saved here will apply immediately to the tenant's environment. 
+                          Ensure you have verified the tenant's request before altering critical settings like billing or branding.
+                      </p>
+                  </div>
+              </div>
+
+              {/* Embed BusinessSettings Component */}
+              <BusinessSettings tenantId={targetTenantId} />
+          </div>
+      );
+  }
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen gap-8 pb-20 animate-fade-in">
         {/* Settings Nav */}
@@ -260,7 +418,9 @@ export const GlobalSettings: React.FC = () => {
                     {[
                         { id: 'general', icon: SettingsIcon, label: 'General' },
                         { id: 'system', icon: Server, label: 'System & DB' },
-                        { id: 'tenants', icon: Building2, label: 'Tenant Management' },
+                        { id: 'tenants', icon: Building2, label: 'Global Tenants' },
+                        { id: 'businesses', icon: Store, label: 'Global Businesses' },
+                        { id: 'stokvels', icon: UsersIcon, label: 'Global Stokvels' },
                         { id: 'users', icon: UsersIcon, label: 'User Management' },
                         { id: 'billing', icon: DollarSign, label: 'Billing & Plans' },
                         { id: 'support', icon: Mail, label: 'Support & Contacts' },
@@ -290,7 +450,7 @@ export const GlobalSettings: React.FC = () => {
             `}</style>
 
             <div className="mb-6 flex justify-between items-center">
-                <h3 className="text-xl font-bold capitalize text-slate-800 dark:text-white">{activeTab.replace(/([A-Z])/g, ' $1').trim()}</h3>
+                <h3 className="text-xl font-bold capitalize text-slate-800 dark:text-white">{activeTab.replace(/([A-Z])/g, ' $1').replace('_', ' ').trim()}</h3>
                 {(activeTab === 'general' || activeTab === 'system') && (
                     <Button onClick={handleSave} isLoading={isSaving} className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-lg">
                         <Save size={18} className="mr-2"/> Save Changes
@@ -314,10 +474,16 @@ export const GlobalSettings: React.FC = () => {
                                     <span className="text-white text-xs font-bold">Change</span>
                                 </div>
                                 <div className="absolute inset-0 opacity-0 cursor-pointer">
-                                    <FileUploader onFileSelect={handleLogoUpload} onClear={handleClearLogo} label="" previewUrl={formData.erpLogoUrl}/>
+                                    <FileUploader 
+                                        onFileSelect={handleLogoUpload} 
+                                        onClear={handleClearLogo} 
+                                        label="" 
+                                        previewUrl={formData.erpLogoUrl}
+                                        accept="image/png, image/jpeg, image/svg+xml"
+                                    />
                                 </div>
                             </div>
-                            <p className="text-xs text-slate-500 mt-2">Max 2MB (PNG/JPG)</p>
+                            <p className="text-xs text-slate-500 mt-2">Max 2MB (PNG/JPG/SVG)</p>
                         </div>
 
                         <div className="space-y-4">
@@ -469,51 +635,24 @@ export const GlobalSettings: React.FC = () => {
                 </div>
             )}
 
-            {/* Tenant Management */}
+            {/* Global Tenants Management */}
             {activeTab === 'tenants' && (
                 <div className="space-y-6 animate-fade-in">
-                    <Card noPadding className="overflow-hidden">
-                        <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                            <h4 className="font-bold text-lg text-slate-900 dark:text-white">Registered Tenants</h4>
-                            <p className="text-sm text-slate-500">Manage all business and stokvel entities in the ERP.</p>
-                        </div>
-                        <div className="p-4">
-                            {tenants.length === 0 ? (
-                                <div className="text-center py-8 text-slate-400">No tenants registered yet.</div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {tenants.map(tenant => (
-                                        <div key={tenant.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center">
-                                                    {tenant.branding?.logoUrl && !tenant.branding.logoUrl.includes('ui-avatars') ? (
-                                                        <img src={tenant.branding.logoUrl} alt={tenant.name} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <Building2 size={18} className="text-slate-400" />
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-slate-900 dark:text-white">{tenant.branding?.displayName || tenant.name}</p>
-                                                    <p className="text-xs text-slate-500">{tenant.type} • {tenant.category}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button 
-                                                    onClick={() => toggleTenantStatus(tenant)}
-                                                    className={`text-[10px] px-2 py-1 rounded font-bold uppercase transition-colors ${tenant.isActive ? 'bg-emerald-100 text-emerald-700 hover:bg-red-100 hover:text-red-700' : 'bg-red-100 text-red-700 hover:bg-emerald-100 hover:text-emerald-700'}`}
-                                                >
-                                                    {tenant.isActive ? 'Active' : 'Inactive'}
-                                                </button>
-                                                <Button variant="ghost" size="sm" className="hover:bg-slate-100 dark:hover:bg-slate-800">
-                                                    <Edit2 size={14} />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </Card>
+                    {renderTenantList('ALL')}
+                </div>
+            )}
+
+            {/* Global Business Management */}
+            {activeTab === 'businesses' && (
+                <div className="space-y-6 animate-fade-in">
+                    {renderTenantList(TenantType.BUSINESS)}
+                </div>
+            )}
+
+            {/* Global Stokvel Management */}
+            {activeTab === 'stokvels' && (
+                <div className="space-y-6 animate-fade-in">
+                    {renderTenantList(TenantType.STOKVEL)}
                 </div>
             )}
 

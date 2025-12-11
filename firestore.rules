@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Helper Functions ---
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user has specific role
+    function hasRole(role) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    // Check if user is Super Admin
+    function isSuperAdmin() {
+      return hasRole('SUPER_ADMIN');
+    }
+
+    // Check if user belongs to the tenant they are trying to access
+    function isTenantAdmin(tenantId) {
+      let userData = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isAuthenticated() && 
+             userData.tenantId == tenantId && 
+             (userData.role == 'TENANT_ADMIN' || userData.role == 'BRANCH_MANAGER');
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Global Settings & System Config
+    // Only Super Admin can write, but authenticated users can read (for theme/branding)
+    match /global/settings {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+    
+    match /system_settings/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // 2. Tenants Collection
+    // Super Admins have full access.
+    // Tenant Admins can only read/write their OWN tenant document.
+    match /tenants/{tenantId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow write: if isSuperAdmin() || isTenantAdmin(tenantId);
+
+      // Sub-collections (Settings, etc.) inherit access
+      match /settings/{settingDoc} {
+        allow read, write: if isSuperAdmin() || isTenantAdmin(tenantId);
+      }
+      
+      // Business Data Sub-collections
+      match /{document=**} {
+        allow read, write: if isSuperAdmin() || isTenantAdmin(tenantId);
+      }
+    }
+
+    // 3. Users Collection
+    // Super Admin can manage all users.
+    // Tenant Admins can manage users within their tenant.
+    // Users can read their own profile.
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        isSuperAdmin() || 
+        isTenantAdmin(resource.data.tenantId)
+      );
+      allow write: if isSuperAdmin() || 
+        (isTenantAdmin(request.resource.data.tenantId) && request.resource.data.role != 'SUPER_ADMIN');
+    }
+
+    // 4. Billing Plans
+    match /billing_plans/{planId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    match /tenant_billing/{tenantId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow write: if isSuperAdmin(); // Only Super Admin (or system) updates billing status
+    }
+
+    // 5. Audit Logs
+    match /audit_logs/{logId} {
+      allow read: if isSuperAdmin();
+      allow create: if isAuthenticated(); // Anyone can write logs
+      allow update, delete: if false; // Logs are immutable
+    }
+    
+    // 6. Mail Triggers
+    match /mail_triggers/{triggerId} {
+        allow create: if isAuthenticated();
+        allow read, update: if isSuperAdmin(); // Backend processes these
+    }
+  }
+}
