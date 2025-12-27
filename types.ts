@@ -1,3 +1,4 @@
+
 // Enums for standardizing statuses and roles
 export enum UserRole {
   SUPER_ADMIN = 'SUPER_ADMIN',
@@ -11,7 +12,8 @@ export enum UserRole {
 export enum TenantType {
   BUSINESS = 'BUSINESS',
   STOKVEL = 'STOKVEL',
-  LENDING = 'LENDING'
+  LENDING = 'LENDING',
+  LOAN = 'LOAN'
 }
 
 export enum TransactionType {
@@ -69,7 +71,7 @@ export interface BillingPlan {
   interval: BillingInterval;
   features: string[];
   isActive: boolean;
-  tier: 'BASIC' | 'PRO' | 'ENTERPRISE'; // Maps to AccessSettings
+  tier: 'BASIC' | 'PRO' | 'ENTERPRISE';
 }
 
 export interface Invoice {
@@ -98,22 +100,19 @@ export interface TenantBilling {
   billingEmail?: string;
 }
 
-// Global ERP Settings
 export interface GlobalSettings {
-  id: 'global'; // Fixed ID for the global settings document
+  id: 'global';
   erpName: string;
   erpLogoUrl?: string;
-  primaryColor: string; // Global accent color
-  secondaryColor: string; // Global secondary accent color
+  primaryColor: string;
+  secondaryColor: string;
   supportEmail: string;
   platformDomain: string;
-  
-  // New System Settings
   apiKeys?: {
     googleMaps?: string;
     sendGrid?: string;
     twilio?: string;
-    firebaseProject?: string; // Informational
+    firebaseProject?: string;
   };
   system?: {
     maintenanceMode: boolean;
@@ -123,21 +122,19 @@ export interface GlobalSettings {
   };
 }
 
-// Tenant-Specific Settings Interfaces (Sub-documents)
 export interface BrandingSettings {
   logoUrl?: string;
-  primaryColor: string; // Tenant's primary color, overrides global
-  secondaryColor?: string; // Tenant's secondary color, overrides global
-  displayName: string; // Tenant's display name
-  slogan?: string; // Short description/slogan
+  primaryColor: string;
+  secondaryColor?: string;
+  displayName: string;
+  slogan?: string;
 }
 
 export interface AccessSettings {
   subscriptionTier: 'BASIC' | 'PRO' | 'ENTERPRISE';
-  // Other access-related settings can go here
 }
 
-export interface EmailTemplate { // Moved template definition here
+export interface EmailTemplate {
   id: string;
   name: string;
   subject: string;
@@ -148,9 +145,9 @@ export interface EmailTemplate { // Moved template definition here
 export interface EmailSettings {
   smtpHost?: string;
   smtpPort?: number;
-  smtpUser?: string; // SMTP username (e.g., email address)
-  smtpPass?: string; // SMTP password (securely handled, not stored client-side)
-  senderEmail: string; // Default 'From' email address
+  smtpUser?: string;
+  smtpPass?: string;
+  senderEmail: string;
   replyTo?: string;
   templates: EmailTemplate[];
 }
@@ -162,25 +159,25 @@ export interface NotificationSettings {
   lowStock: boolean;
   creditWarning: boolean;
   autoMonthlyReport: boolean;
-  recipients: string[]; // List of emails for notifications
+  recipients: string[];
 }
 
 export interface POSSettings {
   receiptFooter: string;
-  taxRate: number; // e.g., 15 for 15%
+  taxRate: number;
   enableCash: boolean;
   enableCard: boolean;
   enableCredit: boolean;
   autoPrint: boolean;
   currencySymbol: string; 
-  numberFormat: 'R_COMMA_DECIMAL' | 'COMMA_DECIMAL_R'; // R 1,234.56 vs 1,234.56 R
+  numberFormat: 'R_COMMA_DECIMAL' | 'COMMA_DECIMAL_R';
 }
 
 export interface BusinessCycleSettings {
-  startDay: number; // e.g., 5 (for 5th of the month)
-  endDay: number;   // e.g., 4 (for 4th of the next month)
-  fiscalStartMonth: number; // 1-12 (e.g., 1 for Jan, 7 for July)
-  currencySymbol: string; // e.g., 'R', '$'
+  startDay: number;
+  endDay: number;
+  fiscalStartMonth: number;
+  currencySymbol: string;
 }
 
 export interface DataSettings {
@@ -190,30 +187,24 @@ export interface DataSettings {
 
 export interface SecuritySettings {
   twoFactorAuth: boolean;
-  sessionTimeout: number; // minutes
+  sessionTimeout: number;
   ipWhitelist: string[];
   auditLogRetentionDays: number;
 }
 
-
-// Main Tenant Interface (Stores summary & directly editable profile fields)
 export interface Tenant {
   id: string;
-  name: string; // Main name for search/list - branding.displayName is for display
+  name: string;
   type: TenantType;
   isActive: boolean;
-  category?: string; // Business category (e.g., Butchery, IT)
-
-  // Direct fields (can be edited on initial profile tab)
+  category?: string;
   regNumber?: string;
   taxNumber?: string;
   address?: string;
   contactNumber?: string;
-  email?: string; // Contact email for the business/stokvel
+  email?: string;
   website?: string;
-  target?: number; // Only for Stokvels (financial target)
-
-  // Nested Settings (these will be separate sub-documents in Firestore)
+  target?: number;
   branding?: BrandingSettings;
   access?: AccessSettings; 
   emailConfig?: EmailSettings;
@@ -233,16 +224,16 @@ export interface Branch {
 
 export interface User {
   id: string;
-  tenantId: string; // 'global' for SuperAdmin, otherwise tenant ID
+  tenantId: string;
   branchId?: string;
   name: string;
   email: string;
-  phone?: string; // Added phone field
+  phone?: string;
   role: UserRole;
   avatarUrl?: string;
-  permissions?: string[]; // E.g., ['VIEW_REPORTS', 'MANAGE_STOCK']
-  isActive?: boolean; // New field for activation status
-  hasSeenWelcome?: boolean; // New field for welcome tour
+  permissions?: string[];
+  isActive?: boolean;
+  hasSeenWelcome?: boolean;
   createdAt?: string;
 }
 
@@ -266,7 +257,7 @@ export interface Contribution {
   memberId: string;
   amount: number;
   date: string;
-  period: string; // YYYY-MM
+  period: string;
   status: ContributionStatus;
   method: PaymentMethod;
 }
@@ -308,6 +299,9 @@ export interface Customer {
   salesCount?: number;
   totalCredit?: number; 
   timestamp?: string; 
+  idNumber?: string;
+  employmentStatus?: string;
+  income?: number;
 }
 
 export interface Expense {
@@ -331,10 +325,14 @@ export interface Transaction {
   currency: string;
   method: PaymentMethod;
   status: 'COMPLETED' | 'PENDING' | 'FAILED';
-  timestamp: string; // ISO date
+  timestamp: string;
   reference?: string;
   receivedBy?: string;
   items?: { productId: string; name: string; qty: number; price: number; subtotal: number }[];
+  // Repayment specifics
+  principalPart?: number;
+  interestPart?: number;
+  loanId?: string;
 }
 
 export interface Loan {
@@ -342,7 +340,7 @@ export interface Loan {
   tenantId: string;
   customerId: string;
   customerName: string;
-  amount: number;
+  amount: number; // Principal
   interestRate: number;
   totalRepayable: number;
   balanceRemaining: number;
@@ -350,6 +348,7 @@ export interface Loan {
   dueDate: string;
   status: LoanStatus;
   approvals: { userId: string; role: UserRole; approved: boolean; date: string }[];
+  lastCompoundedDate?: string; // Tracks when auto-compounding was last applied
 }
 
 export interface POPDocument {
@@ -358,7 +357,7 @@ export interface POPDocument {
   uploadedBy: string;
   amount: number;
   reference: string;
-  imageUrl: string; // URL to image
+  imageUrl: string;
   ocrData?: string;
   status: POPStatus;
   timestamp: string;

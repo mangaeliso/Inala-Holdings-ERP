@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -50,16 +51,18 @@ export const CurrencyExchange: React.FC = () => {
   const { currentTenant } = useUI(); // Get currentTenant
   const [rates, setRates] = useState(INITIAL_RATES_TO_ZAR);
   const [amount, setAmount] = useState<string>('1');
-  const [fromCurrency, setFromCurrency] = useState(currentTenant?.currency || 'USD'); // Use tenant's currency as default
+  // Fixed: Tenant does not have a direct currency property; using cycleSettings.currencySymbol
+  const [fromCurrency, setFromCurrency] = useState(currentTenant?.cycleSettings?.currencySymbol || 'USD'); 
   const [toCurrency, setToCurrency] = useState('ZAR');
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
   // Update default currencies when tenant changes
   useEffect(() => {
-    if (currentTenant?.currency) {
-      setFromCurrency(currentTenant.currency);
+    // Fixed: Using cycleSettings.currencySymbol which stores the currency code
+    if (currentTenant?.cycleSettings?.currencySymbol) {
+      setFromCurrency(currentTenant.cycleSettings.currencySymbol);
     }
-  }, [currentTenant?.currency]);
+  }, [currentTenant?.cycleSettings?.currencySymbol]);
 
   // Simulate live tickers
   useEffect(() => {

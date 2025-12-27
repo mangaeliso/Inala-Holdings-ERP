@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getExpenses, getTransactions, addExpense } from '../services/firestore';
+import { getExpenses, getTransactions, addExpense, getExpenseCategories } from '../services/firestore';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
@@ -15,20 +15,29 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
   const [showModal, setShowModal] = useState(false);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
-    category: 'Rent',
+    category: '',
     date: new Date().toISOString().split('T')[0]
   });
 
   useEffect(() => {
     const fetchData = async () => {
+        if (!tenantId) return;
         const e = await getExpenses(tenantId);
+        console.log("LEGACY EXPENSES COUNT:", e.length);
         setExpenses(e);
         const t = await getTransactions(tenantId);
         setTransactions(t.filter(tx => tx.type === TransactionType.SALE));
+        const cats = await getExpenseCategories(tenantId);
+        setCategories(cats);
+        // Set default category
+        if (cats.length > 0) {
+            setFormData(prev => ({ ...prev, category: cats[0] }));
+        }
     };
     fetchData();
   }, [tenantId]);
@@ -45,7 +54,7 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
       tenantId,
       description: formData.description,
       amount: Number(formData.amount),
-      category: formData.category,
+      category: formData.category || 'Other',
       date: formData.date,
       status: 'PAID'
     };
@@ -54,7 +63,12 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
     setExpenses(prev => [...prev, newExpense].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     
     setShowModal(false);
-    setFormData({ description: '', amount: '', category: 'Rent', date: new Date().toISOString().split('T')[0] });
+    setFormData({ 
+        description: '', 
+        amount: '', 
+        category: categories.length > 0 ? categories[0] : 'Rent', 
+        date: new Date().toISOString().split('T')[0] 
+    });
   };
 
   const chartData = [
@@ -161,13 +175,12 @@ export const Expenses: React.FC<ExpensesProps> = ({ tenantId }) => {
                       onChange={(e) => setFormData({...formData, category: e.target.value})}
                       className="w-full border p-2 rounded dark:bg-slate-800 dark:border-slate-700"
                    >
-                      <option>Rent</option>
-                      <option>Utilities</option>
-                      <option>Supplies</option>
-                      <option>Salaries</option>
-                      <option>Maintenance</option>
-                      <option>Marketing</option>
-                      <option>Other</option>
+                      {categories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                      {!categories.includes('Rent') && <option>Rent</option>}
+                      {!categories.includes('Utilities') && <option>Utilities</option>}
+                      {!categories.includes('Other') && <option>Other</option>}
                    </select>
                 </div>
             </div>

@@ -8,11 +8,11 @@ import { Search, Plus, AlertTriangle, Edit2, Trash2, Box } from 'lucide-react';
 import { useUI } from '../context/UIContext';
 
 interface InventoryProps {
-    tenantId?: string | null;
+    tenantId: string;
 }
 
 export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
-  const { currentTenant } = useUI();
+  const { addToast } = useUI();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -20,21 +20,18 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
   const [refresh, setRefresh] = useState(0); 
   const [isLoading, setIsLoading] = useState(true);
 
-  // Form State - Removed 'cost' from active state tracking for UI
+  const activeTenantId = tenantId;
+
   const [formData, setFormData] = useState<Partial<Product>>({
       name: '', sku: '', category: '', subcategory: '', price: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit'
   });
 
   useEffect(() => {
     const loadProducts = async () => {
+      if (!activeTenantId) return;
       setIsLoading(true);
       try {
-        if (!currentTenant?.id || currentTenant.id === 'global') {
-          setProducts([]);
-          setIsLoading(false);
-          return;
-        }
-        const data = await getProducts(currentTenant.id);
+        const data = await getProducts(activeTenantId);
         setProducts(data);
       } catch (error) {
         console.error("Failed to load products:", error);
@@ -43,7 +40,7 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
       }
     };
     loadProducts();
-  }, [currentTenant?.id, refresh]);
+  }, [activeTenantId, refresh]);
 
   const filteredProducts = products.filter(p => 
      (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -59,41 +56,47 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
 
   const handleDelete = async (productId: string) => {
       if(window.confirm('Are you sure you want to delete this product?')) {
-          if (!currentTenant?.id || currentTenant.id === 'global') return;
-          await deleteProduct(currentTenant.id, productId);
+          await deleteProduct(activeTenantId, productId);
           setRefresh(prev => prev + 1);
+          addToast('Product removed.', 'success');
       }
   };
 
   const handleAddNew = () => {
       setEditingProduct(null);
       setFormData({
-        name: '', sku: '', category: 'General', subcategory: '', price: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit', tenantId: currentTenant?.id || ''
+        name: '', sku: '', category: 'General', subcategory: '', price: 0, stockLevel: 0, minStockThreshold: 10, unit: 'unit', tenantId: activeTenantId
       });
       setShowModal(true);
   };
 
   const handleSave = async () => {
-      if (!currentTenant?.id || currentTenant.id === 'global') {
-        alert("Cannot add/edit product without a selected tenant.");
-        return;
+      if (!activeTenantId) return;
+      try {
+        if (editingProduct) {
+            await updateProduct({ 
+                ...editingProduct, 
+                ...formData,
+                tenantId: activeTenantId 
+            } as Product);
+        } else {
+            await addProduct({ 
+                ...formData, 
+                cost: 0, 
+                id: `product_${Date.now()}`, 
+                tenantId: activeTenantId, 
+                imageUrl: '' 
+            } as Product);
+        }
+        setShowModal(false);
+        setRefresh(prev => prev + 1);
+        addToast(editingProduct ? 'Product updated' : 'Product added', 'success');
+      } catch (error: any) {
+          console.error("Save error:", error);
+          alert("Error saving product: " + error.message);
       }
-      if (editingProduct) {
-          await updateProduct({ ...editingProduct, ...formData } as Product);
-      } else {
-          await addProduct({ 
-              ...formData, 
-              cost: 0, 
-              id: `p_${Date.now()}`, 
-              tenantId: currentTenant.id, 
-              imageUrl: '' 
-          } as Product);
-      }
-      setShowModal(false);
-      setRefresh(prev => prev + 1);
   };
 
-  // Helper for status badge
   const getStockStatus = (level: number, threshold: number) => {
       if (level === 0) return { label: 'Out of Stock', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
       if (level <= threshold) return { label: 'Low Stock', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
@@ -104,7 +107,7 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-400">
           <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p>Loading inventory...</p>
+          <p>Loading catalog...</p>
       </div>
     );
   }
@@ -114,17 +117,15 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Inventory</h2>
-                <p className="text-sm text-slate-500">Manage stock levels, pricing, and catalog.</p>
+                <p className="text-sm text-slate-500">Manage stock levels for this business unit.</p>
             </div>
             <div className="flex gap-2">
-                <Button variant="outline" className="bg-white dark:bg-slate-800">Import CSV</Button>
                 <Button onClick={handleAddNew} className="shadow-lg shadow-indigo-500/20">
                     <Plus size={18} className="mr-2" /> Add Product
                 </Button>
             </div>
         </div>
 
-        {/* Search Bar */}
         <div className="relative max-w-lg">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
@@ -150,8 +151,8 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-5 dark:divide-slate-800/50 bg-white dark:bg-slate-900">
-                        {filteredProducts.map(product => {
-                            const status = getStockStatus(product.stockLevel || 0, product.minStockThreshold || 0); // Safe access
+                        {filteredProducts.length > 0 ? filteredProducts.map(product => {
+                            const status = getStockStatus(product.stockLevel || 0, product.minStockThreshold || 0); 
                             return (
                                 <tr key={product.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
                                     <td className="px-6 py-4">
@@ -196,19 +197,24 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                                     </td>
                                 </tr>
                             );
-                        })}
+                        }) : (
+                            <tr>
+                                <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
+                                    No products found in this business unit.
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
         </Card>
 
-        {/* Add/Edit Modal */}
         <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingProduct ? "Edit Product" : "Add New Product"} size="md">
             <div className="space-y-6 pt-2">
                 <div className="grid grid-cols-2 gap-5">
                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Product Name</label>
-                        <input type="text" className="w-full border border-slate-300 dark:border-slate-700 p-3 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. Sirloin Steak" />
+                        <input type="text" className="w-full border border-slate-300 dark:border-slate-700 p-3 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="e.g. Sirloin Steak" />
                     </div>
                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">SKU Code</label>
@@ -219,15 +225,9 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                 <div className="grid grid-cols-2 gap-5">
                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Category</label>
-                        <div className="relative">
-                            <Box size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input type="text" list="categories" className="w-full border border-slate-300 dark:border-slate-700 pl-10 pr-3 py-3 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.category || ''} onChange={e => setFormData({...formData, category: e.target.value})} placeholder="Select or type..." />
-                        </div>
+                        <input type="text" list="categories" className="w-full border border-slate-300 dark:border-slate-700 p-3 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.category || ''} onChange={e => setFormData({...formData, category: e.target.value})} placeholder="Select or type..." />
                         <datalist id="categories">
-                            <option value="Beef" />
-                            <option value="Wors" />
-                            <option value="Pork" />
-                            <option value="Chicken" />
+                            <option value="Meat" /><option value="Beef" /><option value="Wors" /><option value="Pork" /><option value="Chicken" />
                         </datalist>
                     </div>
                     <div className="space-y-1.5">
@@ -244,9 +244,7 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Unit</label>
                         <select className="w-full border border-slate-300 dark:border-slate-700 p-3 rounded-xl dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.unit || 'unit'} onChange={e => setFormData({...formData, unit: e.target.value as any})}>
-                            <option value="unit">Item</option>
-                            <option value="kg">Kg</option>
-                            <option value="litre">L</option>
+                            <option value="unit">Item</option><option value="kg">Kg</option><option value="litre">L</option>
                         </select>
                     </div>
                 </div>
@@ -254,7 +252,7 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                 <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-5">
                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Stock Level</label>
-                        <input type="number" className="w-full border border-slate-200 dark:border-slate-700 p-2 rounded-lg bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.stockLevel || 0} onChange={e => setFormData({...formData, stockLevel: Number(e.target.value)})} />
+                        <input type="number" className="w-full border border-slate-200 dark:border-slate-700 p-2 rounded-lg bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none" value={formData.stockLevel || 0} onChange={e => setFormData({...formData,stockLevel: Number(e.target.value)})} />
                     </div>
                     <div className="space-y-1.5">
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Low Stock Alert</label>
@@ -266,8 +264,8 @@ export const Inventory: React.FC<InventoryProps> = ({ tenantId }) => {
                 </div>
 
                 <div className="pt-4 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                    <Button variant="ghost" onClick={() => setShowModal(false)} className="hover:bg-slate-100 text-slate-600">Cancel</Button>
-                    <Button onClick={handleSave} className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-indigo-600 dark:hover:bg-indigo-700">Save Product</Button>
+                    <Button variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>
+                    <Button onClick={handleSave} className="bg-slate-900 text-white">Save Product</Button>
                 </div>
             </div>
         </Modal>

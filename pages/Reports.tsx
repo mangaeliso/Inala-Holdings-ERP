@@ -1,742 +1,418 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { getTransactions, getExpenses, getProducts, getCustomers, addTransaction } from '../services/firestore';
-import { TransactionType, Transaction, Expense, Product, Customer, PaymentMethod } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Modal } from '../components/ui/Modal';
 import { 
-  CreditCard, 
-  Calendar, 
-  Wallet,
-  Receipt,
-  CheckSquare,
-  Activity,
-  ArrowLeft,
-  Clock,
-  ShoppingBag,
-  TrendingUp,
-  TrendingDown,
-  ChevronDown
+  CreditCard, Activity, ArrowLeft, BarChart2,
+  FileText, DollarSign
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
+import { 
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
+} from 'recharts';
+import { 
+  fetchSalesData, 
+  fetchExpensesData, 
+  fetchTransactions, 
+  fetchPaymentsData,
+  fetchLifetimeSalesAndPayments
+} from '../services/firestore';
 
 interface ReportsProps {
   tenantId: string;
 }
 
-type ReportView = 'DASHBOARD' | 'CREDITS' | 'TRANSACTIONS' | 'COLLECTIONS' | 'COMPARISON';
-type FilterPeriod = 'CURRENT' | 'LAST';
+type ReportView = 'DASHBOARD' | 'CREDITS' | 'TRANSACTIONS' | 'PAYMENTS';
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June', 
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 export const Reports: React.FC<ReportsProps> = ({ tenantId }) => {
   const [view, setView] = useState<ReportView>('DASHBOARD');
   const [isLoading, setIsLoading] = useState(true);
   
+  // Date State
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState(new Date().getMonth()); // 0-11
+  
   // Data State
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-
-  // Filters
-  const [filterPeriod, setFilterPeriod] = useState<FilterPeriod>('CURRENT');
-  const [useBusinessCycle, setUseBusinessCycle] = useState(true);
+  const [sales, setSales] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
   
-  // Smart Anchor Date Logic:
-  // Returns the date of the cycle start (5th) based on today.
-  // If today is Nov 2nd (before 5th), cycle start was Oct 5th.
-  // If today is Nov 6th (after 5th), cycle start was Nov 5th.
-  const getAnchorDate = () => {
-      const now = new Date();
-      if (now.getDate() < 5) {
-          now.setMonth(now.getMonth() - 1);
-      }
-      return now;
-  };
-  
-  const [anchorDate, setAnchorDate] = useState<Date>(getAnchorDate());
+  // Lifetime Data for Credits
+  const [lifetimeData, setLifetimeData] = useState<{sales: any[], payments: any[]}>({sales: [], payments: []});
+  const [loadingCredits, setLoadingCredits] = useState(false);
 
-  // Payment Modal State
-  const [showPayModal, setShowPayModal] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentType, setPaymentType] = useState<'FULL' | 'PARTIAL'>('PARTIAL');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFT);
-  const [receiver, setReceiver] = useState('');
+  // Filters for sub-views
+  const [showPaidCredits, setShowPaidCredits] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-        setIsLoading(true);
-        try {
-            const [txs, exps, prods, custs] = await Promise.all([
-                getTransactions(tenantId),
-                getExpenses(tenantId),
-                getProducts(tenantId),
-                getCustomers(tenantId)
-            ]);
-            setTransactions(txs);
-            setExpenses(exps);
-            setProducts(prods);
-            setCustomers(custs);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    fetchData();
-  }, [tenantId]);
-
-  // --- Filter Logic ---
-  const handlePeriodChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const val = e.target.value as FilterPeriod;
-      setFilterPeriod(val);
-      
-      const newAnchor = getAnchorDate(); // Reset to current base
-      if (val === 'LAST') {
-          newAnchor.setMonth(newAnchor.getMonth() - 1);
-      }
-      setAnchorDate(newAnchor);
-  };
-
+  // Parse Date Range for CURRENT View (Dashboard/Transactions)
   const dateRange = useMemo(() => {
-      const start = new Date(anchorDate);
-      const end = new Date(anchorDate);
+    const start = new Date(Date.UTC(selectedYear, selectedMonthIndex, 1, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(selectedYear, selectedMonthIndex + 1, 0, 23, 59, 59, 999));
+    
+    console.log(`[Month Range] ${selectedYear}-${selectedMonthIndex + 1}:`, {
+        start: start.toISOString(),
+        end: end.toISOString()
+    });
+    
+    return { start, end };
+  }, [selectedYear, selectedMonthIndex]);
 
-      if (useBusinessCycle) {
-          // Cycle: 5th of Month -> 4th of Next Month
-          start.setDate(5);
-          start.setHours(0, 0, 0, 0);
-
-          end.setMonth(end.getMonth() + 1);
-          end.setDate(4);
-          end.setHours(23, 59, 59, 999);
-      } else {
-          // Standard: 1st -> Last Day
-          start.setDate(1);
-          start.setHours(0, 0, 0, 0);
-
-          end.setMonth(end.getMonth() + 1);
-          end.setDate(0); 
-          end.setHours(23, 59, 59, 999);
-      }
-      return { start, end };
-  }, [anchorDate, useBusinessCycle]);
-
-  const dashboardData = useMemo(() => {
-      // 1. Filter Transactions by Date
-      const filteredTxs = transactions.filter(t => {
-          const d = new Date(t.timestamp);
-          return d >= dateRange.start && d <= dateRange.end;
-      });
+  // Load Period Data
+  useEffect(() => {
+    const loadPeriodData = async () => {
+      setIsLoading(true);
       
-      const filteredExps = expenses.filter(e => {
-          const d = new Date(e.date);
-          return d >= dateRange.start && d <= dateRange.end;
-      });
+      console.log(`\n[Reports] LOADING PERIOD DATA FOR ${tenantId}`);
+      
+      try {
+        const [salesData, expensesData, txData, paymentsData] = await Promise.all([
+          fetchSalesData(tenantId, dateRange.start, dateRange.end),
+          fetchExpensesData(tenantId, dateRange.start, dateRange.end),
+          fetchTransactions(tenantId, dateRange.start, dateRange.end),
+          fetchPaymentsData(tenantId, dateRange.start, dateRange.end)
+        ]);
 
-      // 2. Metrics
-      const salesTxs = filteredTxs.filter(t => t.type === TransactionType.SALE);
-      const totalSales = salesTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
-      const totalExpenses = filteredExps.reduce((sum, e) => sum + (e.amount || 0), 0);
-      const netProfit = totalSales - totalExpenses;
-      const txCount = salesTxs.length + filteredExps.length;
+        console.log(`[Reports] Sales count: ${salesData.length}`);
+        console.log(`[Reports] Expenses count: ${expensesData.length}`);
+        console.log(`[Reports] Payments count: ${paymentsData.length}`);
 
-      // 3. Category Performance
-      const categories = ['Beef', 'Pork', 'Chicken'];
-      const categoryStats = categories.map(cat => {
-          // Identify products in this category (safe check)
-          const catProductIds = new Set(
-              products
-                .filter(p => (p.category || '').toLowerCase().includes(cat.toLowerCase()))
-                .map(p => p.id)
-          );
-          
-          let catSales = 0;
-          let catTxCount = 0;
-          let topProductsMap: Record<string, number> = {};
+        setSales(salesData);
+        setExpenses(expensesData);
+        setTransactions(txData);
+        setPayments(paymentsData);
 
-          salesTxs.forEach(t => {
-              if (!t.items) return;
-              let hasCategoryItem = false;
-              
-              t.items.forEach(item => {
-                  if (catProductIds.has(item.productId)) {
-                      catSales += item.subtotal;
-                      hasCategoryItem = true;
-                      topProductsMap[item.name] = (topProductsMap[item.name] || 0) + item.qty;
-                  }
-              });
+      } catch (error) {
+        console.error("Failed to load report data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadPeriodData();
+  }, [dateRange, tenantId]);
 
-              if (hasCategoryItem) catTxCount++;
-          });
-
-          // Filter expenses related to this category (simple text match on description/category)
-          const catExpenses = filteredExps
-              .filter(e => 
-                  (e.category || '').toLowerCase().includes(cat.toLowerCase()) || 
-                  (e.description || '').toLowerCase().includes(cat.toLowerCase())
-              )
-              .reduce((sum, e) => sum + (e.amount || 0), 0);
-
-          const profit = catSales - catExpenses;
-          const margin = catSales > 0 ? (profit / catSales) * 100 : 0;
-
-          const topProducts = Object.entries(topProductsMap)
-              .sort(([, a], [, b]) => b - a)
-              .slice(0, 3)
-              .map(([name, qty]) => `${name} (${qty})`)
-              .join(', ');
-
-          return {
-              name: `${cat} Products`,
-              sales: catSales,
-              expenses: catExpenses,
-              profit,
-              transactions: catTxCount,
-              margin,
-              topProducts
+  // Load Lifetime Data
+  useEffect(() => {
+      if (view === 'CREDITS') {
+          const loadLifetime = async () => {
+              setLoadingCredits(true);
+              const data = await fetchLifetimeSalesAndPayments(tenantId);
+              setLifetimeData(data);
+              setLoadingCredits(false);
           };
+          loadLifetime();
+      }
+  }, [view, tenantId]);
+
+  const metrics = useMemo(() => {
+    const totalSales = sales.reduce((sum, s) => sum + Number(s.total || s.amount || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const netProfit = totalSales - totalExpenses;
+    
+    const categoryMap: Record<string, number> = {};
+    sales.forEach(sale => {
+       const cat = sale.category || (sale.items && sale.items[0]?.category) || 'General';
+       categoryMap[cat] = (categoryMap[cat] || 0) + Number(sale.total || sale.amount || 0);
+    });
+    const categoryChartData = Object.entries(categoryMap)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a,b) => b.value - a.value);
+
+    return { totalSales, totalExpenses, netProfit, txCount: sales.length + payments.length, categoryChartData };
+  }, [sales, expenses, payments]);
+
+  const creditorsData = useMemo(() => {
+      if (view !== 'CREDITS') return [];
+      
+      const balances: Record<string, {name: string, totalCredit: number, totalPaid: number, owed: number, lastDate: string}> = {};
+
+      lifetimeData.sales.forEach(s => {
+          const method = String(s.paymentMethod || s.method || '').toLowerCase();
+          const paymentType = String(s.payment || '').toLowerCase(); 
+          const status = String(s.status || '').toLowerCase();
+          const isCredit = method.includes('credit') || status === 'credit' || paymentType === 'credit';
+
+          if (isCredit) {
+              const cid = s.customerId || s.customer_name || s.customerName || 'Unknown';
+              if (!balances[cid]) balances[cid] = { name: s.customerName || s.customer_name || 'Unknown', totalCredit: 0, totalPaid: 0, owed: 0, lastDate: s.timestamp || s.createdAt || new Date().toISOString() };
+              balances[cid].totalCredit += Number(s.total || s.amount || 0);
+              const saleDate = s.timestamp || s.createdAt || '';
+              if (saleDate > balances[cid].lastDate) balances[cid].lastDate = saleDate;
+          }
       });
 
-      return { totalSales, totalExpenses, netProfit, txCount, categoryStats, filteredTxs, filteredExps };
-  }, [transactions, expenses, products, dateRange]);
+      lifetimeData.payments.forEach(p => {
+          const cid = p.customerId || p.customer_name || p.customerName || 'Unknown';
+          if (balances[cid]) {
+              balances[cid].totalPaid += Number(p.amount || 0);
+          }
+      });
 
-  // --- View Renderers ---
+      const results = Object.values(balances).map(b => ({
+          ...b,
+          owed: b.totalCredit - b.totalPaid
+      }));
+
+      const filtered = results.filter(b => showPaidCredits ? true : b.owed > 1); 
+      return filtered;
+  }, [lifetimeData, showPaidCredits, view]);
 
   const renderDashboard = () => (
-    <>
-        {/* Top Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="border-l-4 border-emerald-500">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Sales</p>
-                        <h3 className="text-2xl font-black text-emerald-600 mt-2">R {(dashboardData.totalSales || 0).toLocaleString()}</h3>
-                    </div>
-                </div>
-            </Card>
-            <Card className="border-l-4 border-red-500">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Expenses</p>
-                        <h3 className="text-2xl font-black text-red-600 mt-2">R {(dashboardData.totalExpenses || 0).toLocaleString()}</h3>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-[10px] text-slate-400">Total</p>
-                        <p className="text-xs font-bold text-red-500">Expenses</p>
-                    </div>
-                </div>
-            </Card>
-            <Card className={`border-l-4 ${(dashboardData.netProfit || 0) >= 0 ? 'border-emerald-500' : 'border-red-500'}`}>
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Net Profit</p>
-                        <h3 className={`text-2xl font-black mt-2 ${(dashboardData.netProfit || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                            R {(dashboardData.netProfit || 0).toLocaleString()}
-                        </h3>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-[10px] text-slate-400">Excl. Tax</p>
-                    </div>
-                </div>
-            </Card>
-            <Card className="border-l-4 border-blue-500">
-                <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Transactions</p>
-                        <h3 className="text-2xl font-black text-blue-600 mt-2">{dashboardData.txCount || 0}</h3>
-                    </div>
-                </div>
-            </Card>
-        </div>
-
-        {/* Report Actions */}
-        <div className="bg-slate-900/5 dark:bg-slate-900/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2 mb-4 text-slate-500 font-bold text-sm">
-                <Activity size={16} /> Report Actions
+    <div className="space-y-8 animate-fade-in">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border-l-4 border-l-emerald-500 shadow-sm border border-slate-100 dark:border-slate-800">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Sales</p>
+                <h3 className="text-2xl font-black text-emerald-600 mt-2">R {metrics.totalSales.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+                <p className="text-xs text-slate-400 mt-1">{sales.length} Records • {MONTHS[selectedMonthIndex]}</p>
             </div>
-            <div className="flex flex-wrap gap-4">
-                <button onClick={() => setView('CREDITS')} className="flex items-center gap-3 px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl shadow-lg shadow-slate-900/10 transition-all active:scale-95 text-sm font-semibold border border-slate-700">
-                    <CreditCard size={18} className="text-indigo-400"/> Manage Credits
-                </button>
-                <button onClick={() => setView('TRANSACTIONS')} className="flex items-center gap-3 px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl shadow-lg shadow-slate-900/10 transition-all active:scale-95 text-sm font-semibold border border-slate-700">
-                    <Receipt size={18} className="text-emerald-400"/> All Transactions
-                </button>
-                <button onClick={() => setView('COLLECTIONS')} className="flex items-center gap-3 px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl shadow-lg shadow-slate-900/10 transition-all active:scale-95 text-sm font-semibold border border-slate-700">
-                    <Wallet size={18} className="text-blue-400"/> Payment Collection
-                </button>
-                <button onClick={() => setView('COMPARISON')} className="flex items-center gap-3 px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl shadow-lg shadow-slate-900/10 transition-all active:scale-95 text-sm font-semibold border border-slate-700">
-                    <Calendar size={18} className="text-purple-400"/> Month Comparison
-                </button>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border-l-4 border-l-red-500 shadow-sm border border-slate-100 dark:border-slate-800">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Expenses</p>
+                <h3 className="text-2xl font-black text-red-600 mt-2">R {metrics.totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+                <p className="text-xs text-slate-400 mt-1">{expenses.length} Records</p>
+            </div>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border-l-4 border-l-indigo-500 shadow-sm border border-slate-100 dark:border-slate-800">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Net Profit</p>
+                <h3 className={`text-2xl font-black mt-2 ${metrics.netProfit >= 0 ? 'text-indigo-600' : 'text-amber-600'}`}>
+                    R {metrics.netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                </h3>
+            </div>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border-l-4 border-l-blue-500 shadow-sm border border-slate-100 dark:border-slate-800">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Activity</p>
+                <h3 className="text-2xl font-black text-blue-600 mt-2">{metrics.txCount}</h3>
+                <p className="text-xs text-slate-400 mt-1">Transactions</p>
             </div>
         </div>
 
-        {/* Business Category Performance */}
-        <div>
-            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Business Category Performance</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {dashboardData.categoryStats.map((cat, index) => (
-                    <Card key={index} className="flex flex-col h-full border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex justify-between items-start mb-6">
-                            <h4 className="font-bold text-slate-900 dark:text-white">{cat.name}</h4>
-                            <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${(cat.profit || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                {(cat.profit || 0) >= 0 ? 'PROFITABLE' : 'LOSS'}
-                            </span>
-                        </div>
-
-                        <div className="text-center mb-8">
-                            <h2 className={`text-3xl font-black ${(cat.profit || 0) >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                R {(cat.profit || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
-                            </h2>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-6 px-2">
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase font-bold">SALES</p>
-                                <p className="text-sm font-bold text-emerald-500">R {(cat.sales || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase font-bold">EXPENSES</p>
-                                <p className="text-sm font-bold text-red-500">R {(cat.expenses || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase font-bold">TRANSACTIONS</p>
-                                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{cat.transactions || 0}</p>
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase font-bold">MARGIN</p>
-                                <p className={`text-sm font-bold ${(cat.margin || 0) >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                    {(cat.margin || 0).toFixed(1)}%
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="mt-auto pt-4 border-t border-slate-100 dark:border-slate-800">
-                            <p className="text-[10px] text-slate-500 font-bold mb-1">Top Products:</p>
-                            <p className="text-xs text-slate-400 truncate h-4">{cat.topProducts || 'No products sold'}</p>
-                        </div>
-                    </Card>
-                ))}
+        <Card noPadding>
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                    <BarChart2 size={16} /> Report Actions
+                </h4>
             </div>
-        </div>
-    </>
+            <div className="p-4 flex flex-wrap gap-4">
+                <Button variant="outline" onClick={() => { setView('CREDITS'); setShowPaidCredits(false); }}>
+                    <CreditCard size={16} className="mr-2 text-indigo-500"/> Manage Credits
+                </Button>
+                <Button variant="outline" onClick={() => { setView('CREDITS'); setShowPaidCredits(true); }}>
+                    <FileText size={16} className="mr-2 text-orange-500"/> Creditors Report
+                </Button>
+                <Button variant="outline" onClick={() => setView('TRANSACTIONS')}>
+                    <Activity size={16} className="mr-2 text-emerald-500"/> All Transactions
+                </Button>
+                <Button variant="outline" onClick={() => setView('PAYMENTS')}>
+                    <DollarSign size={16} className="mr-2 text-amber-500"/> Payment Collection
+                </Button>
+            </div>
+        </Card>
+
+        <Card>
+            <h3 className="text-sm font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-4">
+                Sales by Category
+            </h3>
+            <div style={{ width: '100%', height: 400, minHeight: 400 }}>
+                {metrics.categoryChartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={400}>
+                        <BarChart data={metrics.categoryChartData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="name" fontSize={12} />
+                            <YAxis fontSize={12} />
+                            <Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff'}} />
+                            <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                ) : (
+                    <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                        No sales data available for this period.
+                    </div>
+                )}
+            </div>
+        </Card>
+    </div>
   );
 
-  const renderCredits = () => {
-      // Filter customers with positive debt
-      const debtorCustomers = customers.filter(c => (c.currentDebt || 0) > 0 || (c.totalCredit || 0) > 0);
+  const renderCreditsView = () => (
+    <div className="space-y-6 animate-fade-in">
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+                <Button variant="ghost" onClick={() => setView('DASHBOARD')}>
+                    <ArrowLeft size={18} className="mr-2"/> Back
+                </Button>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {showPaidCredits ? 'Full Creditors Ledger' : 'Outstanding Credits'}
+                </h2>
+            </div>
+            <div className="flex gap-2">
+                <Button 
+                    variant={showPaidCredits ? 'primary' : 'outline'} 
+                    onClick={() => setShowPaidCredits(!showPaidCredits)}
+                    size="sm"
+                >
+                    {showPaidCredits ? 'Hide Paid History' : 'Show All History'}
+                </Button>
+            </div>
+        </div>
 
-      return (
-          <div className="animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                  <Button variant="outline" onClick={() => setView('DASHBOARD')} className="bg-white dark:bg-slate-800">
-                      <ArrowLeft size={16} className="mr-2"/> Back
-                  </Button>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Outstanding Credits</h2>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {debtorCustomers.map(customer => {
-                      const debt = (customer.totalCredit || 0) + (customer.currentDebt || 0);
-                      return (
-                       <div key={customer.id} className="group relative bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-100 dark:border-slate-800 shadow-soft hover:shadow-lg transition-all duration-300">
-                           <div className="absolute top-0 left-0 bottom-0 w-1.5 rounded-l-2xl bg-amber-500" />
-                           <div className="pl-4 flex justify-between items-start mb-4">
-                               <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold border-4 border-white dark:border-slate-800 shadow-sm bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                        {customer.name.charAt(0)}
-                                    </div>
-                                   <div>
-                                       <h3 className="font-bold text-lg text-slate-900 dark:text-white leading-tight">{customer.name}</h3>
-                                       <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5"><ShoppingBag size={12}/> {customer.salesCount || 0} Sales</p>
-                                   </div>
-                               </div>
-                           </div>
-                           <div className="pl-4 space-y-3">
-                               <div className="flex justify-between items-center text-sm border-b border-slate-50 dark:border-slate-800 pb-2">
-                                   <span className="text-slate-500 flex items-center gap-1"><Clock size={14}/> Last Purchase</span>
-                                   <span className="font-medium text-slate-900 dark:text-white">
-                                       {customer.lastPurchaseDate 
-                                          ? new Date(customer.lastPurchaseDate).toLocaleDateString() 
-                                          : 'N/A'}
-                                   </span>
-                               </div>
-
-                               <div className="flex justify-between items-end pt-1">
-                                   <div>
-                                       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Total Due</p>
-                                       <p className="text-2xl font-extrabold flex items-center gap-2 text-amber-600">
-                                           R {debt.toFixed(2)}
-                                       </p>
-                                   </div>
-                                   <Button size="sm" onClick={() => handlePayClick(customer)} className="shadow-lg shadow-amber-500/20 bg-amber-600 hover:bg-amber-700 text-white border-none">
-                                       Record Pay
-                                   </Button>
-                               </div>
-                           </div>
-                       </div>
-                  )})}
-                  {debtorCustomers.length === 0 && (
-                      <div className="col-span-full p-12 text-center bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
-                          No outstanding credits found for this period.
-                      </div>
-                  )}
-              </div>
-          </div>
-      );
-  };
-
-  const renderTransactions = () => {
-      // Re-sort chronologically desc
-      const combined = [
-          ...dashboardData.filteredTxs.map(t => ({
-              id: t.id,
-              date: t.timestamp,
-              type: t.type === TransactionType.SALE ? 'SALE' : t.type === TransactionType.DEBT_PAYMENT ? 'PAYMENT' : 'OTHER',
-              desc: t.items ? `${t.items.length} Items` : t.type,
-              amount: t.amount,
-              isExpense: false
-          })),
-          ...dashboardData.filteredExps.map(e => ({
-              id: e.id,
-              date: e.date,
-              type: 'EXPENSE',
-              desc: e.description,
-              amount: e.amount,
-              isExpense: true
-          }))
-      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      return (
-          <div className="animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                  <Button variant="outline" onClick={() => setView('DASHBOARD')} className="bg-white dark:bg-slate-800">
-                      <ArrowLeft size={16} className="mr-2"/> Back
-                  </Button>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">All Transactions</h2>
-              </div>
-
-              <Card noPadding className="overflow-hidden">
-                  <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-left">
-                          <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-xs uppercase text-slate-500">
-                              <tr>
-                                  <th className="px-6 py-4">Date</th>
-                                  <th className="px-6 py-4">Type</th>
-                                  <th className="px-6 py-4">Description</th>
-                                  <th className="px-6 py-4 text-right">Amount</th>
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                              {combined.map((item, i) => (
-                                  <tr key={`${item.id}_${i}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                      <td className="px-6 py-4 text-slate-500 font-mono text-xs">
-                                          {new Date(item.date).toLocaleDateString()}
-                                      </td>
-                                      <td className="px-6 py-4">
-                                          <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
-                                              item.isExpense ? 'bg-red-100 text-red-600' : 
-                                              item.type === 'PAYMENT' ? 'bg-indigo-100 text-indigo-600' :
-                                              'bg-emerald-100 text-emerald-600'
-                                          }`}>
-                                              {item.type}
-                                          </span>
-                                      </td>
-                                      <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{item.desc}</td>
-                                      <td className={`px-6 py-4 text-right font-bold ${item.isExpense ? 'text-red-500' : 'text-slate-900 dark:text-white'}`}>
-                                          {item.isExpense ? '-' : '+'} R {(item.amount || 0).toFixed(2)}
-                                      </td>
-                                  </tr>
-                              ))}
-                              {combined.length === 0 && (
-                                  <tr><td colSpan={4} className="p-8 text-center text-slate-400">No transactions found.</td></tr>
-                              )}
-                          </tbody>
-                      </table>
-                  </div>
-              </Card>
-          </div>
-      );
-  };
-
-  const renderCollections = () => {
-      // Filter for Payments
-      const collections = dashboardData.filteredTxs.filter(t => 
-          t.type === TransactionType.DEBT_PAYMENT || (t.type === TransactionType.SALE && t.method !== PaymentMethod.CREDIT)
-      ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-      return (
-          <div className="animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                  <Button variant="outline" onClick={() => setView('DASHBOARD')} className="bg-white dark:bg-slate-800">
-                      <ArrowLeft size={16} className="mr-2"/> Back
-                  </Button>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Payment Collections</h2>
-              </div>
-              <div className="space-y-4">
-                  {collections.map(t => (
-                      <Card key={t.id} noPadding className="p-4 flex justify-between items-center">
-                          <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
-                                  {t.customerName ? t.customerName.charAt(0) : 'W'}
-                              </div>
-                              <div>
-                                  <p className="font-bold text-slate-900 dark:text-white">{t.customerName || 'Walk-In'}</p>
-                                  <p className="text-xs text-slate-500">{new Date(t.timestamp).toLocaleDateString()}</p>
-                              </div>
-                          </div>
-                          <div className="text-right">
-                              <p className="font-bold text-emerald-600">R {(t.amount || 0).toFixed(2)}</p>
-                              <p className="text-xs text-slate-400 uppercase">{t.method}</p>
-                          </div>
-                      </Card>
-                  ))}
-              </div>
-          </div>
-      );
-  };
-
-  const renderComparison = () => {
-      // Calculate Previous Month Data
-      const prevAnchor = new Date(anchorDate);
-      prevAnchor.setMonth(prevAnchor.getMonth() - 1);
-      
-      const prevStart = new Date(prevAnchor);
-      const prevEnd = new Date(prevAnchor);
-
-      if (useBusinessCycle) {
-          prevStart.setDate(5);
-          prevStart.setHours(0,0,0,0);
-          
-          prevEnd.setMonth(prevEnd.getMonth() + 1);
-          prevEnd.setDate(4);
-          prevEnd.setHours(23,59,59,999);
-      } else {
-          prevStart.setDate(1);
-          prevStart.setHours(0,0,0,0);
-
-          prevEnd.setMonth(prevEnd.getMonth() + 1);
-          prevEnd.setDate(0);
-          prevEnd.setHours(23,59,59,999);
-      }
-
-      const getMetrics = (s: Date, e: Date) => {
-          const txs = transactions.filter(t => { const d = new Date(t.timestamp); return d >= s && d <= e && t.type === TransactionType.SALE; });
-          const exps = expenses.filter(x => { const d = new Date(x.date); return d >= s && d <= e; });
-          const sales = txs.reduce((sum, t) => sum + (t.amount || 0), 0);
-          const expense = exps.reduce((sum, x) => sum + (x.amount || 0), 0);
-          return { sales, expense, profit: sales - expense };
-      };
-
-      const curr = { sales: dashboardData.totalSales, expense: dashboardData.totalExpenses, profit: dashboardData.netProfit };
-      const prev = getMetrics(prevStart, prevEnd);
-
-      const getPct = (c: number, p: number) => {
-          if (!p || p === 0) return c > 0 ? 100 : 0;
-          const result = ((c - p) / p) * 100;
-          return isFinite(result) ? result : 0;
-      };
-
-      const stats = [
-          { label: 'Total Sales', curr: curr.sales, prev: prev.sales, change: getPct(curr.sales, prev.sales) },
-          { label: 'Total Expenses', curr: curr.expense, prev: prev.expense, change: getPct(curr.expense, prev.expense) },
-          { label: 'Net Profit', curr: curr.profit, prev: prev.profit, change: getPct(curr.profit, prev.profit) },
-      ];
-
-      return (
-          <div className="animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                  <Button variant="outline" onClick={() => setView('DASHBOARD')} className="bg-white dark:bg-slate-800">
-                      <ArrowLeft size={16} className="mr-2"/> Back
-                  </Button>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Month Comparison</h2>
-              </div>
-              <div className="grid grid-cols-1 gap-6">
-                  <Card>
-                      <div className="space-y-6">
-                          {stats.map((stat, i) => (
-                              <div key={i} className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-4 last:border-0 last:pb-0">
-                                  <span className="font-bold text-lg text-slate-700 dark:text-slate-300">{stat.label}</span>
-                                  <div className="flex gap-8 items-center text-right">
-                                      <span className="w-32 text-slate-400">R {(stat.prev || 0).toLocaleString()}</span>
-                                      <span className="w-32 font-black text-xl text-slate-900 dark:text-white">R {(stat.curr || 0).toLocaleString()}</span>
-                                      <div className={`w-20 flex justify-end`}>
-                                          <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center ${(stat.change || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                              {(stat.change || 0) >= 0 ? <TrendingUp size={12} className="mr-1"/> : <TrendingDown size={12} className="mr-1"/>}
-                                              {Math.abs(stat.change || 0).toFixed(1)}%
-                                          </span>
-                                      </div>
-                                  </div>
-                              </div>
-                          ))}
-                      </div>
-                  </Card>
-
-                  <div className="h-80 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={[
-                                { name: 'Sales', prev: prev.sales || 0, curr: curr.sales || 0 },
-                                { name: 'Expenses', prev: prev.expense || 0, curr: curr.expense || 0 },
-                                { name: 'Profit', prev: prev.profit || 0, curr: curr.profit || 0 }
-                            ]}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                                <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                                <Tooltip 
-                                    cursor={{fill: 'transparent'}} 
-                                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-                                />
-                                <Legend iconType="circle" />
-                                <Bar dataKey="prev" name="Previous" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="curr" name="Current" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                  </div>
-              </div>
-          </div>
-      );
-  };
-
-  // --- Payment Logic ---
-  const handlePayClick = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setShowPayModal(true);
-    setPaymentAmount('');
-    setPaymentType('PARTIAL');
-    setPaymentDate(new Date().toISOString().split('T')[0]);
-    setPaymentMethod(PaymentMethod.EFT);
-    setReceiver('');
-  };
-
-  const processPayment = async () => {
-      if (!selectedCustomer) return;
-      await addTransaction({
-          id: `tx_pay_${Date.now()}`,
-          tenantId,
-          branchId: 'b_001',
-          customerId: selectedCustomer.id,
-          customerName: selectedCustomer.name,
-          type: TransactionType.DEBT_PAYMENT,
-          amount: Number(paymentAmount),
-          currency: 'ZAR',
-          method: paymentMethod,
-          status: 'COMPLETED', 
-          timestamp: new Date(paymentDate).toISOString(),
-          reference: 'DEBT-PAYMENT',
-          receivedBy: receiver
-      });
-      
-      setCustomers(prev => prev.map(c => 
-          c.id === selectedCustomer.id 
-          ? { ...c, currentDebt: (c.currentDebt || 0) - Number(paymentAmount) } 
-          : c
-      ));
-      setShowPayModal(false);
-  };
-
-  if (isLoading) {
-      return (
-          <div className="h-full flex flex-col items-center justify-center text-slate-400">
-              <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p>Loading business intelligence...</p>
-          </div>
-      );
-  }
+        {loadingCredits ? (
+            <div className="p-12 text-center text-slate-400">Loading history...</div>
+        ) : (
+            <Card noPadding>
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-xs uppercase text-slate-500 font-semibold">
+                        <tr>
+                            <th className="px-6 py-4">Customer</th>
+                            <th className="px-6 py-4 text-right">Total Credit</th>
+                            <th className="px-6 py-4 text-right">Paid Back</th>
+                            <th className="px-6 py-4 text-right">Outstanding</th>
+                            <th className="px-6 py-4">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {creditorsData.map((c, i) => (
+                            <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">
+                                    {c.name}
+                                    <span className="block text-xs text-slate-400 font-normal">Last Active: {new Date(c.lastDate).toLocaleDateString()}</span>
+                                </td>
+                                <td className="px-6 py-4 text-right text-slate-500">R {c.totalCredit.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-right text-emerald-600">R {c.totalPaid.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-right font-bold text-slate-900 dark:text-white">R {c.owed.toFixed(2)}</td>
+                                <td className="px-6 py-4">
+                                    {c.owed > 1 ? (
+                                        <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs font-bold">Owing</span>
+                                    ) : (
+                                        <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-xs font-bold">Settled</span>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </Card>
+        )}
+    </div>
+  );
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-end gap-4">
-            <div>
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
-                    <Activity className="text-indigo-600" /> Business Intelligence
-                </h2>
-                <p className="text-indigo-400 font-mono text-sm mt-1">
-                    Cycle: {dateRange.start.toLocaleDateString()} - {dateRange.end.toLocaleDateString()}
-                </p>
-            </div>
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-100/50 dark:bg-slate-900/50 p-4 rounded-3xl border border-slate-200 dark:border-slate-800">
+            <h2 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3 px-2">
+                <BarChart2 className="text-indigo-600" /> 
+                {view === 'DASHBOARD' ? 'Monthly Overview' : view.charAt(0) + view.slice(1).toLowerCase()}
+            </h2>
             
-            <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 cursor-pointer select-none bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-xl shadow-sm" onClick={() => setUseBusinessCycle(!useBusinessCycle)}>
-                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${useBusinessCycle ? 'bg-indigo-500 border-indigo-500' : 'bg-transparent border-slate-400'}`}>
-                        {useBusinessCycle && <CheckSquare size={12} className="text-white" />}
-                    </div>
-                    <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Biz Cycle (5th-4th)</span>
+            <div className="flex flex-col sm:flex-row items-center gap-3 bg-white dark:bg-slate-950 p-1.5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center px-2">
+                    <select 
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                        className="bg-transparent font-bold text-slate-900 dark:text-white outline-none cursor-pointer text-lg"
+                    >
+                        {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
                 </div>
-
-                <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Filter Period:</span>
-                    <div className="relative">
-                        <select 
-                            value={filterPeriod}
-                            onChange={handlePeriodChange}
-                            className="appearance-none bg-slate-900 text-white pl-4 pr-10 py-2 rounded-lg text-sm font-bold cursor-pointer focus:ring-2 focus:ring-indigo-500 outline-none"
+                <div className="h-8 w-px bg-slate-200 dark:border-slate-700 mx-1 hidden sm:block"></div>
+                <div className="grid grid-cols-6 sm:flex gap-1">
+                    {MONTHS.map((m, i) => (
+                        <button
+                            key={m}
+                            onClick={() => setSelectedMonthIndex(i)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                selectedMonthIndex === i 
+                                ? 'bg-indigo-600 text-white shadow-md' 
+                                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            }`}
                         >
-                            <option value="CURRENT">Current Month</option>
-                            <option value="LAST">Last Month</option>
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                    </div>
+                            {m.slice(0, 3)}
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>
 
-        {view === 'DASHBOARD' && renderDashboard()}
-        {view === 'CREDITS' && renderCredits()}
-        {view === 'TRANSACTIONS' && renderTransactions()}
-        {view === 'COLLECTIONS' && renderCollections()}
-        {view === 'COMPARISON' && renderComparison()}
-
-        {/* Payment Modal */}
-        <Modal isOpen={showPayModal} onClose={() => setShowPayModal(false)} title="Record Payment" size="sm">
-            <div className="space-y-6 pt-2">
-                <div className="text-center bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                    <p className="text-slate-500 text-xs uppercase font-bold tracking-wide mb-1">Customer owes</p>
-                    <p className="text-3xl font-extrabold text-red-500">R {((selectedCustomer?.totalCredit || 0) + (selectedCustomer?.currentDebt || 0)).toFixed(2)}</p>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mt-2">{selectedCustomer?.name}</p>
-                </div>
-                
-                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-                    <button 
-                        onClick={() => {
-                            setPaymentType('PARTIAL');
-                            setPaymentAmount('');
-                        }}
-                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'PARTIAL' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Partial
-                    </button>
-                    <button 
-                        onClick={() => {
-                            setPaymentType('FULL');
-                            if (selectedCustomer) {
-                                const debt = (selectedCustomer.totalCredit || 0) + (selectedCustomer.currentDebt || 0);
-                                setPaymentAmount(debt.toFixed(2));
-                            }
-                        }}
-                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${paymentType === 'FULL' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Full Settlement
-                    </button>
-                </div>
-
-                <div className="space-y-4">
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Amount to Pay</label>
-                        <input 
-                            type="number" 
-                            value={paymentAmount} 
-                            onChange={(e) => setPaymentAmount(e.target.value)} 
-                            className="w-full px-4 py-3 border border-slate-300 dark:border-slate-700 rounded-xl dark:bg-slate-800 font-bold text-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="0.00"
-                        />
-                    </div>
-                    <Button className="w-full h-12 text-lg font-bold shadow-lg shadow-indigo-500/20" onClick={processPayment} disabled={!paymentAmount || !receiver}>
-                        Confirm Payment
-                    </Button>
-                </div>
+        {isLoading ? (
+            <div className="h-64 flex flex-col items-center justify-center text-slate-400">
+                <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                Analyzing data...
             </div>
-        </Modal>
+        ) : (
+            <>
+                {view === 'DASHBOARD' && renderDashboard()}
+                {view === 'CREDITS' && renderCreditsView()}
+                {view === 'TRANSACTIONS' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Button variant="ghost" onClick={() => setView('DASHBOARD')}><ArrowLeft size={18}/></Button>
+                            <h2 className="text-xl font-bold">Transaction Log ({MONTHS[selectedMonthIndex]})</h2>
+                        </div>
+                        <Card noPadding>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                                        <tr>
+                                            <th className="px-6 py-4">Date</th>
+                                            <th className="px-6 py-4">Type</th>
+                                            <th className="px-6 py-4">Description</th>
+                                            <th className="px-6 py-4 text-right">Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {transactions.map((item: any) => (
+                                            <tr key={item.id}>
+                                                <td className="px-6 py-4 text-slate-500">{new Date(item.date).toLocaleDateString()}</td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                                        item.type === 'EXPENSE' ? 'bg-red-100 text-red-600' : 
+                                                        item.type === 'DEBT_PAYMENT' ? 'bg-indigo-100 text-indigo-600' :
+                                                        'bg-emerald-100 text-emerald-600'
+                                                    }`}>
+                                                        {item.type}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 font-medium">{item.description || (item.items ? `Sale: ${item.items.length} items` : 'Transaction')}</td>
+                                                <td className="px-6 py-4 text-right font-bold">R {Math.abs(item.amount).toFixed(2)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+                {view === 'PAYMENTS' && (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Button variant="ghost" onClick={() => setView('DASHBOARD')}><ArrowLeft size={18}/></Button>
+                            <h2 className="text-xl font-bold">Collections ({MONTHS[selectedMonthIndex]})</h2>
+                        </div>
+                        <Card noPadding>
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
+                                    <tr>
+                                        <th className="px-6 py-4">Date</th>
+                                        <th className="px-6 py-4">Customer</th>
+                                        <th className="px-6 py-4">Method</th>
+                                        <th className="px-6 py-4 text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {payments.map((p: any) => (
+                                        <tr key={p.id}>
+                                            <td className="px-6 py-4 text-slate-500">{new Date(p.timestamp || p.createdAt).toLocaleDateString()}</td>
+                                            <td className="px-6 py-4 font-bold">{p.customerName || p.customer_name || 'Unknown'}</td>
+                                            <td className="px-6 py-4">{p.payment_type || 'Manual'}</td>
+                                            <td className="px-6 py-4 text-right font-bold text-emerald-600">R {(p.amount || 0).toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </Card>
+                    </div>
+                )}
+            </>
+        )}
     </div>
   );
 };
