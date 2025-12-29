@@ -8,7 +8,7 @@ import {
     getBusinessProfile, 
     updateBusinessProfile, 
     getBusinessAdmins, 
-    addBusinessAdmin, 
+    // Fix: Removed missing export 'addBusinessAdmin'
     uploadFileToFirebaseStorage,
     getBillingPlans,
     getTenantBilling,
@@ -370,7 +370,8 @@ export const BusinessSettings: React.FC<BusinessSettingsProps> = ({ tenantId, on
                           <select value={profile.type} onChange={e => setProfile({...profile, type: e.target.value as any})} className="input-field">
                               <option value={TenantType.BUSINESS}>Retail Business</option>
                               <option value={TenantType.STOKVEL}>Stokvel Group</option>
-                              <option value={TenantType.LENDING}>Lending Institution</option>
+                              {/* Fix: Using string 'LENDING' for compatibility with legacy data as TenantType.LENDING does not exist in the enum */}
+                              <option value={'LENDING'}>Lending Institution</option>
                           </select>
                       </div>
                       <div className="space-y-1.5">

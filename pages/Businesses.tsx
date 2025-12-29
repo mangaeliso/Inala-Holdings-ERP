@@ -1,19 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
 import { getTenants, addTenant, updateTenant, getTenantBrandingSettings, getTransactions, getLoans } from '../services/firestore';
-import { TenantType, Tenant, BrandingSettings, BusinessCycleSettings, AccessSettings, TransactionType } from '../types';
+import { TenantType, Tenant, BrandingSettings, BusinessCycleSettings, AccessSettings, TransactionType, BusinessMode } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { Plus, LayoutDashboard, ArrowUpRight, Store, MapPin, Edit2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, LayoutDashboard, Store, MapPin, Edit2, CheckCircle2, CreditCard, ShoppingBag } from 'lucide-react';
 import { useUI } from '../context/UIContext';
 
 interface BusinessesProps {
     onOpenModule: (moduleId: string, tenantId: string) => void;
 }
 
-/**
- * Isolated Business Card Component
- * Handles its own scoped data fetching to ensure truthful metrics.
- */
 const BusinessCard: React.FC<{ 
     tenant: Tenant, 
     onOpen: (id: string) => void, 
@@ -27,17 +24,19 @@ const BusinessCard: React.FC<{
         const fetchStats = async () => {
             setIsLoadingStats(true);
             try {
-                // Fetch ONLY data belonging to this specific tenant
-                if (tenant.type === TenantType.BUSINESS) {
-                    const txs = await getTransactions(tenant.id);
-                    const total = txs
-                        .filter(t => t.type === TransactionType.SALE)
-                        .reduce((sum, t) => sum + (t.amount || 0), 0);
-                    setRevenue(total);
-                } else if (tenant.type === TenantType.LENDING || tenant.type === TenantType.LOAN) {
+                // Determine metrics based on mode or legacy type
+                const isLendingOnly = tenant.businessMode === 'LOANS' || (tenant.type as string) === 'LOAN' || (tenant.type as string) === 'LENDING';
+                
+                if (isLendingOnly) {
                     const loans = await getLoans(tenant.id);
                     const totalRemaining = loans.reduce((sum, l) => sum + (l.balanceRemaining || 0), 0);
                     setRevenue(totalRemaining);
+                } else {
+                    const txs = await getTransactions(tenant.id);
+                    const total = txs
+                        .filter(t => t.type === TransactionType.SALE && t.status !== 'VOIDED') // FIXED: Exclude voided transactions
+                        .reduce((sum, t) => sum + (t.amount || 0), 0);
+                    setRevenue(total);
                 }
             } catch (err) {
                 console.error(`Failed to fetch stats for ${tenant.id}:`, err);
@@ -47,7 +46,7 @@ const BusinessCard: React.FC<{
             }
         };
         fetchStats();
-    }, [tenant.id, tenant.type]);
+    }, [tenant.id, tenant.type, tenant.businessMode]);
 
     const branding = tenant.branding;
     const effectivePrimaryColor = branding?.primaryColor || globalPrimary;
@@ -55,6 +54,8 @@ const BusinessCard: React.FC<{
     const displayName = branding?.displayName || tenant.name;
     const displaySlogan = branding?.slogan || tenant.category;
     const currencySymbol = tenant.cycleSettings?.currencySymbol || 'R';
+    
+    const mode = tenant.businessMode || 'RETAIL';
 
     return (
         <div className="group relative bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col">
@@ -79,8 +80,9 @@ const BusinessCard: React.FC<{
                                 {displayName}
                             </h3>
                             <div className="flex flex-wrap items-center gap-2 mt-2">
-                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${tenant.type === TenantType.LENDING || tenant.type === TenantType.LOAN ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
-                                    {tenant.type === TenantType.LENDING || tenant.type === TenantType.LOAN ? 'Lender' : displaySlogan}
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1 ${mode === 'LOANS' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+                                    {mode === 'LOANS' ? <CreditCard size={10}/> : <ShoppingBag size={10}/>}
+                                    {mode === 'LOANS' ? 'Lender' : mode === 'BOTH' ? 'Retail + Loans' : 'Retail'}
                                 </span>
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
                                     {currencySymbol}
@@ -104,7 +106,7 @@ const BusinessCard: React.FC<{
                 <div className="flex items-center justify-between py-4 border-t border-b border-slate-50 dark:border-slate-800 mb-6 bg-slate-50/50 dark:bg-slate-800/20 -mx-6 px-6">
                     <div>
                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mb-1">
-                            {tenant.type === TenantType.LENDING || tenant.type === TenantType.LOAN ? 'Portfolio Value' : 'Current Revenue'}
+                            {mode === 'LOANS' ? 'Portfolio Value' : 'Revenue'}
                          </p>
                          <div className="flex items-center gap-2">
                              {isLoadingStats ? (
@@ -120,7 +122,7 @@ const BusinessCard: React.FC<{
                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide mb-1">System Status</p>
                          <span className={`text-xs font-bold flex items-center justify-end gap-1.5 ${tenant.isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>
                              <div className={`w-2 h-2 rounded-full ${tenant.isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></div>
-                             {tenant.isActive ? 'Operational' : 'Offline'}
+                             Operational
                          </span>
                     </div>
                 </div>
@@ -149,6 +151,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
   const [formData, setFormData] = useState<Partial<Tenant & BrandingSettings & BusinessCycleSettings & AccessSettings>>({
       name: '',
       type: TenantType.BUSINESS,
+      businessMode: 'RETAIL',
       regNumber: '',
       taxNumber: '',
       address: '',
@@ -172,8 +175,10 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
         try {
             const allTenants = await getTenants();
             const businessTenants = allTenants.filter(tenant => 
-                (tenant.type === TenantType.BUSINESS || tenant.type === TenantType.LENDING || tenant.type === TenantType.LOAN) && tenant.id !== 'global'
+                tenant.id !== 'global' && 
+                (tenant.type === TenantType.BUSINESS || (tenant.type as string) === 'LOAN' || (tenant.type as string) === 'LENDING')
             );
+            
             setTenants(businessTenants);
         } catch (error) {
             console.error("Failed to load business tenants:", error);
@@ -187,7 +192,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
   const handleOpenAdd = () => {
       setEditingTenant(null);
       setFormData({
-          name: '', type: TenantType.BUSINESS, regNumber: '', taxNumber: '',
+          name: '', type: TenantType.BUSINESS, businessMode: 'RETAIL', regNumber: '', taxNumber: '',
           address: '', contactNumber: '', email: '', website: '',
           primaryColor: globalSettings.primaryColor, secondaryColor: globalSettings.secondaryColor,
           logoUrl: '', displayName: '', slogan: '', category: 'General', isActive: true,
@@ -202,6 +207,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
       setFormData({
         ...tenant,
         name: tenant.name, 
+        businessMode: tenant.businessMode || 'RETAIL',
         logoUrl: branding?.logoUrl || undefined, 
         primaryColor: branding?.primaryColor || globalSettings.primaryColor,
         secondaryColor: branding?.secondaryColor || globalSettings.secondaryColor,
@@ -219,7 +225,8 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
       const tenantToSave: Tenant = {
           id: editingTenant ? editingTenant.id : `t_biz_${Date.now()}`,
           name: String(formData.name || ''),
-          type: formData.type || TenantType.BUSINESS,
+          type: TenantType.BUSINESS,
+          businessMode: formData.businessMode || 'RETAIL',
           isActive: !!formData.isActive,
           category: String(formData.category || ''),
           regNumber: String(formData.regNumber || ''),
@@ -278,7 +285,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
     return (
         <div className="h-full flex flex-col items-center justify-center text-slate-400">
             <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p>Loading business units...</p>
+            <p>Scanning business units...</p>
         </div>
     );
   }
@@ -287,8 +294,8 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
     <div className="space-y-8 animate-fade-in">
         <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
             <div>
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Business Units & Lenders</h2>
-                <p className="text-slate-500 mt-2 text-base">Overview of retail outlets, service points, and lending entities.</p>
+                <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Business Units</h2>
+                <p className="text-slate-500 mt-2 text-base">Overview of retail outlets and core business entities.</p>
             </div>
             <Button className="shadow-lg shadow-indigo-500/20" onClick={handleOpenAdd}>
                 <Plus size={18} className="mr-2" />
@@ -316,7 +323,7 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors">Register New Entity</h3>
                 <p className="text-sm text-slate-500 mt-2 max-w-[200px] leading-relaxed">
-                    Add a new retail outlet, branch, or lending service to your organization.
+                    Add a new retail outlet or branch to your organization.
                 </p>
             </button>
         </div>
@@ -347,15 +354,15 @@ export const Businesses: React.FC<BusinessesProps> = ({ onOpenModule }) => {
 
                 <div className="grid grid-cols-2 gap-4">
                      <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Entity Type</label>
+                        <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Business Mode</label>
                         <select 
                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                            value={formData.type || TenantType.BUSINESS}
-                            onChange={e => setFormData({...formData, type: e.target.value as TenantType})}
+                            value={formData.businessMode || 'RETAIL'}
+                            onChange={e => setFormData({...formData, businessMode: e.target.value as BusinessMode})}
                         >
-                            <option value={TenantType.BUSINESS}>Retail Business</option>
-                            <option value={TenantType.LENDING}>Lending Institution</option>
-                            <option value={TenantType.LOAN}>Dedicated Loan Business</option>
+                            <option value="RETAIL">Retail Only</option>
+                            <option value="LOANS">Lending Only</option>
+                            <option value="BOTH">Retail + Lending</option>
                         </select>
                      </div>
                      <div className="space-y-1.5">

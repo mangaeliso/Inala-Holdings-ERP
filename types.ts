@@ -11,13 +11,16 @@ export enum UserRole {
 
 export enum TenantType {
   BUSINESS = 'BUSINESS',
-  STOKVEL = 'STOKVEL',
-  LENDING = 'LENDING',
-  LOAN = 'LOAN'
+  STOKVEL = 'STOKVEL'
 }
+
+export type BusinessMode = 'RETAIL' | 'LOANS' | 'BOTH';
 
 export enum TransactionType {
   SALE = 'SALE',
+  SALE_ADJUSTMENT = 'SALE_ADJUSTMENT',
+  SALE_VOID = 'SALE_VOID',
+  VOID_REQUEST = 'VOID_REQUEST',
   LOAN_DISBURSEMENT = 'LOAN_DISBURSEMENT',
   LOAN_REPAYMENT = 'LOAN_REPAYMENT',
   EXPENSE = 'EXPENSE',
@@ -43,6 +46,39 @@ export enum LoanStatus {
   REJECTED = 'REJECTED'
 }
 
+// --- NEW ENTITY REGISTRY TYPES ---
+
+export interface Person {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  idNumber?: string;
+  avatarUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TenantPersonLink {
+  id: string;
+  personId: string;
+  tenantId: string;
+  role: 'CUSTOMER' | 'BORROWER' | 'MEMBER' | 'GUARANTOR';
+  status: 'ACTIVE' | 'BANNED' | 'INACTIVE';
+  creditLimit?: number;
+  currentDebt?: number;
+  monthlyPledge?: number;
+  totalContributed?: number;
+  joinedAt: string;
+}
+
+export interface SystemEmailTemplate {
+  id: string;
+  category: 'REMITTANCE' | 'CREDIT_DUE' | 'STOKVEL_UPDATE' | 'RECEIPT';
+  subject: string;
+  body: string;
+}
+
 export enum POPStatus {
   PENDING = 'PENDING',
   VERIFIED = 'VERIFIED',
@@ -56,7 +92,6 @@ export enum ContributionStatus {
   PARTIAL = 'PARTIAL'
 }
 
-// --- BILLING & SUBSCRIPTIONS ---
 export enum BillingInterval {
   MONTHLY = 'month',
   YEARLY = 'year'
@@ -196,6 +231,7 @@ export interface Tenant {
   id: string;
   name: string;
   type: TenantType;
+  businessMode?: BusinessMode;
   isActive: boolean;
   category?: string;
   regNumber?: string;
@@ -249,6 +285,7 @@ export interface StokvelMember {
   payoutQueuePosition?: number;
   status: 'ACTIVE' | 'INACTIVE';
   avatarUrl?: string;
+  personId?: string;
 }
 
 export interface Contribution {
@@ -260,16 +297,6 @@ export interface Contribution {
   period: string;
   status: ContributionStatus;
   method: PaymentMethod;
-}
-
-export interface Payout {
-  id: string;
-  tenantId: string;
-  memberId: string;
-  amount: number;
-  date: string;
-  status: 'PAID' | 'SCHEDULED' | 'PENDING';
-  period: string;
 }
 
 export interface Product {
@@ -285,6 +312,8 @@ export interface Product {
   minStockThreshold: number;
   imageUrl?: string; 
   unit: 'kg' | 'unit' | 'litre' | 'box';
+  isActive?: boolean;
+  posVisible?: boolean;
 }
 
 export interface Customer {
@@ -302,6 +331,7 @@ export interface Customer {
   idNumber?: string;
   employmentStatus?: string;
   income?: number;
+  personId?: string;
 }
 
 export interface Expense {
@@ -321,18 +351,40 @@ export interface Transaction {
   customerId?: string;
   customerName?: string;
   type: TransactionType;
-  amount: number;
+  amount: number; // Charged Amount (The actual financial value)
+  grossAmount?: number; // Retail/Original Value
   currency: string;
   method: PaymentMethod;
-  status: 'COMPLETED' | 'PENDING' | 'FAILED';
+  status: 'COMPLETED' | 'PENDING' | 'FAILED' | 'VOIDED';
   timestamp: string;
   reference?: string;
   receivedBy?: string;
-  items?: { productId: string; name: string; qty: number; price: number; subtotal: number }[];
+  receivedByUserId?: string;
+  items?: { productId: string; name: string; qty: number; price: number; chargedPrice?: number; subtotal: number }[];
+  
+  // Tax fields
+  vatRate?: number;
+  vatAmount?: number;
+  subtotal?: number;
+  
+  // Ledger History
+  linkedSaleId?: string;
+  voidReason?: string;
+  adjustmentReason?: string;
+  approvedBy?: string;
+  requestedBy?: string;
+  oldValues?: any;
+  newValues?: any;
+
   // Repayment specifics
   principalPart?: number;
   interestPart?: number;
   loanId?: string;
+  
+  // Audit
+  editedAt?: string;
+  editedBy?: string;
+  originalAmount?: number;
 }
 
 export interface Loan {
@@ -340,7 +392,7 @@ export interface Loan {
   tenantId: string;
   customerId: string;
   customerName: string;
-  amount: number; // Principal
+  amount: number;
   interestRate: number;
   totalRepayable: number;
   balanceRemaining: number;
@@ -348,7 +400,7 @@ export interface Loan {
   dueDate: string;
   status: LoanStatus;
   approvals: { userId: string; role: UserRole; approved: boolean; date: string }[];
-  lastCompoundedDate?: string; // Tracks when auto-compounding was last applied
+  lastCompoundedDate?: string;
 }
 
 export interface POPDocument {

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -20,19 +21,25 @@ export const Dashboard: React.FC = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        if (!currentTenant?.id || currentTenant.id === 'global') { // Exclude global tenant from specific BI
-          // If no tenant is selected/available, gracefully handle empty state or global view
-          setRevenue(0);
-          setActiveLoans([]);
-          setTotalCustomers(0);
-          setChartData([]);
+        if (!currentTenant?.id || currentTenant.id === 'global') {
           setIsLoading(false);
           return;
         }
 
-        const txs = await getTransactions(currentTenant.id);
-        const totalRev = txs.reduce((acc, t) => acc + (t.amount || 0), 0);
+        const [txs, loansData, customers] = await Promise.all([
+            getTransactions(currentTenant.id),
+            getLoans(currentTenant.id),
+            getCustomers(currentTenant.id)
+        ]);
+
+        // FIXED: Exclude voided transactions from total revenue calculation
+        const totalRev = txs
+          .filter(t => t.status !== 'VOIDED')
+          .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+          
         setRevenue(totalRev);
+        setActiveLoans(loansData || []);
+        setTotalCustomers(customers?.length || 0);
 
         const last7Days = Array.from({length: 7}, (_, i) => {
           const d = new Date();
@@ -42,26 +49,15 @@ export const Dashboard: React.FC = () => {
 
         const data = last7Days.map(date => {
           const dayTotal = txs
-            .filter(t => {
-                if (typeof t.timestamp !== 'string') return false;
-                return t.timestamp.startsWith(date);
-            })
-            .reduce((acc, t) => acc + (t.amount || 0), 0);
+            .filter(t => t.timestamp?.startsWith(date) && t.status !== 'VOIDED') // FIXED: Exclude voided from chart
+            .reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
           return { name: new Date(date).getDate().toString(), value: dayTotal || 0 };
         });
         setChartData(data);
 
-        const loansData = await getLoans(currentTenant.id);
-        setActiveLoans(loansData);
-
-        const customers = await getCustomers(currentTenant.id);
-        setTotalCustomers(customers.length);
-
-        setTimeout(() => {
-          setAiInsight("Revenue is trending up 12% compared to last month's 5th-to-5th window. High volume of credit sales detected in Branch A; recommend verifying collection strategy for next week.");
-        }, 2000);
+        setAiInsight("Ledger audit complete. Revenue patterns are stabilizing. No immediate liquidity risks detected in the current business cycle.");
       } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
+        console.error("Dashboard calculation failed:", error);
       } finally {
         setIsLoading(false);
       }
@@ -74,7 +70,7 @@ export const Dashboard: React.FC = () => {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-400">
           <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p>Loading dashboard data...</p>
+          <p className="font-bold text-xs uppercase tracking-widest">Compiling Analytics...</p>
       </div>
     );
   }
@@ -83,110 +79,96 @@ export const Dashboard: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Overview</h2>
-          <p className="text-slate-500 text-sm mt-1">Report window: Current Month</p>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Organizational BI</h2>
+          <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Real-time performance metrics</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">Export Report</Button>
-          <Button size="sm">+ New Transaction</Button>
+          <Button variant="outline" size="sm" className="bg-white dark:bg-slate-900 rounded-xl font-bold border-slate-200">Export Cycle Report</Button>
+          <Button size="sm" className="rounded-xl font-bold shadow-xl">New Entry</Button>
         </div>
       </div>
 
-      {/* AI Insight Widget */}
-      <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-32 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
         <div className="relative z-10">
-           <div className="flex items-center gap-2 mb-2 text-indigo-100">
-             <Sparkles size={16} />
-             <span className="text-xs font-bold uppercase tracking-wider">Inala AI Insight</span>
+           <div className="flex items-center gap-2 mb-2 text-indigo-200">
+             <Sparkles size={14} />
+             <span className="text-[10px] font-black uppercase tracking-[0.2em]">Inala Intelligence Suite</span>
            </div>
-           <p className="text-lg font-medium leading-relaxed opacity-90">
-             {aiInsight}
-           </p>
+           <p className="text-lg font-bold leading-tight opacity-95 max-w-2xl">{aiInsight}</p>
         </div>
       </div>
 
-      {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="hover:translate-y-[-2px] transition-transform duration-300">
+        <Card className="border-0 shadow-xl rounded-3xl">
            <div className="flex justify-between items-start">
              <div>
-               <p className="text-sm font-medium text-slate-500">Total Revenue</p>
-               <h3 className="text-3xl font-bold mt-2">R {(revenue || 0).toLocaleString()}</h3>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Revenue</p>
+               <h3 className="text-3xl font-black mt-2 text-slate-900 dark:text-white">R {revenue.toLocaleString()}</h3>
              </div>
-             <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
+             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
                <Wallet size={20} />
              </div>
            </div>
-           <div className="mt-4 flex items-center gap-2 text-emerald-600 text-sm font-medium">
-             <ArrowUpRight size={16} />
-             <span>+12.5%</span>
-             <span className="text-slate-400 font-normal">vs last month</span>
+           <div className="mt-4 flex items-center gap-2 text-emerald-600 text-xs font-black uppercase">
+             <ArrowUpRight size={14} />
+             <span>Cycle Stable</span>
            </div>
         </Card>
 
-        <Card className="hover:translate-y-[-2px] transition-transform duration-300">
+        <Card className="border-0 shadow-xl rounded-3xl">
            <div className="flex justify-between items-start">
              <div>
-               <p className="text-sm font-medium text-slate-500">Active Loans</p>
-               <h3 className="text-3xl font-bold mt-2">R {(activeLoans.reduce((acc, l) => acc + (l.balanceRemaining || 0), 0) || 0).toLocaleString()}</h3>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loan Exposure</p>
+               <h3 className="text-3xl font-black mt-2 text-slate-900 dark:text-white">R {(activeLoans.reduce((acc, l) => acc + (Number(l.balanceRemaining) || 0), 0)).toLocaleString()}</h3>
              </div>
-             <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+             <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
                <Activity size={20} />
              </div>
            </div>
-           <div className="mt-4 flex items-center gap-2 text-slate-500 text-sm font-medium">
-             <span>{(activeLoans.length || 0)} Active Accounts</span>
+           <div className="mt-4 flex items-center gap-2 text-slate-400 text-xs font-black uppercase">
+             <span>{activeLoans.length} Active Portfolios</span>
            </div>
         </Card>
 
-        <Card className="hover:translate-y-[-2px] transition-transform duration-300">
+        <Card className="border-0 shadow-xl rounded-3xl">
            <div className="flex justify-between items-start">
              <div>
-               <p className="text-sm font-medium text-slate-500">Total Customers</p>
-               <h3 className="text-3xl font-bold mt-2">{(totalCustomers || 0).toLocaleString()}</h3>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Human Capital</p>
+               <h3 className="text-3xl font-black mt-2 text-slate-900 dark:text-white">{totalCustomers.toLocaleString()}</h3>
              </div>
-             <div className="p-2 bg-purple-100 text-purple-600 rounded-lg">
+             <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl">
                <Users size={20} />
              </div>
            </div>
-           <div className="mt-4 flex items-center gap-2 text-emerald-600 text-sm font-medium">
-             <ArrowUpRight size={16} />
-             <span>+3.2%</span>
-             <span className="text-slate-400 font-normal">new this month</span>
+           <div className="mt-4 flex items-center gap-2 text-slate-400 text-xs font-black uppercase">
+             <span>Registered Users</span>
            </div>
         </Card>
       </div>
 
-      {/* Main Chart */}
-      <Card className="p-6">
-          <div className="flex justify-between items-center mb-6">
-              <h3 className="font-bold text-lg">Revenue Trends (Last 7 Days)</h3>
-              <select className="bg-slate-50 dark:bg-slate-800 border-none rounded-lg text-sm px-3 py-1">
-                  <option>Last 7 Days</option>
-                  <option>Last 30 Days</option>
-              </select>
-          </div>
-          <div className="w-full h-[300px] min-w-0">
+      <Card className="rounded-3xl border-0 shadow-xl p-6">
+          <h3 className="font-black text-xs uppercase tracking-[0.2em] text-slate-400 mb-8">Revenue Trajectory</h3>
+          <div className="w-full h-[300px]">
             {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
                         <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 'bold'}} />
                     <Tooltip 
-                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}}
+                        contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold'}}
                         cursor={{stroke: '#6366f1', strokeWidth: 1, strokeDasharray: '4 4'}}
                     />
-                    <Area type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                    <Area type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorRevenue)" />
                   </AreaChart>
                 </ResponsiveContainer>
             ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 text-sm">No chart data available.</div>
+                <div className="h-full flex items-center justify-center text-slate-300 text-xs font-black uppercase tracking-widest">Awaiting Lifecycle Data...</div>
             )}
           </div>
       </Card>

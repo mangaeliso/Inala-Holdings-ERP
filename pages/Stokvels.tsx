@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
-import { getTenants, getStokvelMembers, addTenant } from '../services/firestore'; // Removed updateBusinessProfile, updateTenantBrandingSettings
-import { TenantType, Tenant, BrandingSettings, BusinessCycleSettings, AccessSettings } from '../types'; // Import additional types
+import { getTenants, getStokvelMembers, addTenant } from '../services/firestore';
+import { TenantType, Tenant, BrandingSettings, BusinessCycleSettings, AccessSettings } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Plus, Users, Star, Target, CheckCircle2, ArrowRight, Wallet, Calendar } from 'lucide-react';
@@ -26,13 +27,13 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
       type: TenantType.STOKVEL,
       primaryColor: globalSettings.primaryColor,
       secondaryColor: globalSettings.secondaryColor,
-      logoUrl: '', // This is for branding, not direct tenant property
+      logoUrl: '', 
       displayName: '',
       slogan: '',
       isActive: true,
       target: 50000,
-      currencySymbol: 'ZAR', // Default currency for new stokvel
-      subscriptionTier: 'BASIC', // Default subscription for new stokvel
+      currencySymbol: 'ZAR', 
+      subscriptionTier: 'BASIC',
   });
 
   useEffect(() => {
@@ -40,6 +41,12 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
          setIsLoading(true);
          try {
              const allTenants = await getTenants();
+             
+             /** 
+              * STRICT FILTERING: 
+              * Ensure Stokvels list ONLY contains groups with STOKVEL type.
+              * This removes businesses like Inala Butchery from this categorized view.
+              */
              const stoks = allTenants.filter(t => t.type === TenantType.STOKVEL);
 
              setStokvels(stoks);
@@ -114,7 +121,6 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
           setRefresh(prev => prev + 1);
       } catch (error) {
           console.error("Failed to save stokvel:", error);
-          alert("Failed to save stokvel. Check console for details.");
       }
   };
   
@@ -139,7 +145,7 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
         <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
             <div>
                 <h2 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Stokvel Groups</h2>
-                <p className="text-slate-500 mt-2 text-base">Manage your cooperative savings groups, member rotations, and automated payouts.</p>
+                <p className="text-slate-500 mt-2 text-base">Manage your cooperative savings groups and member rotations.</p>
             </div>
             <Button className="shadow-lg shadow-indigo-500/20" onClick={handleOpenAdd}>
                 <Plus size={18} className="mr-2" />
@@ -154,7 +160,7 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                 const target = stok.target || 100000;
                 const progress = Math.min(100, (sStats.totalPool / (target || 1)) * 100);
                 
-                const branding = stok.branding; // Access nested branding
+                const branding = stok.branding; 
                 const effectivePrimaryColor = branding?.primaryColor || globalSettings.primaryColor;
                 const displayLogo = branding?.logoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(stok.name || '')}&background=${(effectivePrimaryColor || globalSettings.primaryColor)?.replace('#', '')}&color=fff&size=128`;
                 const displayName = branding?.displayName || stok.name;
@@ -167,11 +173,9 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                         key={stok.id} 
                         className="group relative bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden"
                     >
-                        {/* Top Accent Gradient */}
                         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-indigo-50 to-white dark:from-slate-800 dark:to-slate-900 opacity-50 z-0"></div>
                         <div className="absolute top-0 right-0 w-32 h-32 bg-current opacity-[0.03] rounded-bl-full z-0" style={{ color: effectivePrimaryColor }}></div>
 
-                        {/* Content */}
                         <div className="relative z-10">
                             <div className="flex justify-between items-start mb-6">
                                 <div className="w-16 h-16 rounded-2xl p-1 bg-white dark:bg-slate-800 shadow-sm">
@@ -187,7 +191,6 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                                 {displaySlogan}
                             </p>
 
-                            {/* Stats Strip */}
                             <div className="grid grid-cols-3 gap-2 mb-4 border-y border-slate-100 dark:border-slate-800 py-4">
                                 <div className="text-center">
                                     <div className="text-indigo-500 mb-1 flex justify-center"><Users size={18}/></div>
@@ -206,7 +209,6 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                                 </div>
                             </div>
 
-                            {/* Target Progress */}
                             <div className="mb-6">
                                 <div className="flex justify-between items-center text-xs mb-1.5">
                                     <div className="flex items-center gap-1 text-slate-500">
@@ -231,7 +233,6 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                 )
             })}
             
-            {/* Create New Card */}
             <button 
                 onClick={handleOpenAdd}
                 className="relative group rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center justify-center text-center hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all duration-300 min-h-[420px]"
@@ -240,14 +241,12 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                     <Plus size={32} className="text-slate-400 group-hover:text-indigo-500" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 transition-colors">Start a New Stokvel</h3>
-                <p className="text-sm text-slate-500 mt-2 max-w-xs">Create a new group, invite members, set targets and set up automated contribution tracking.</p>
+                <p className="text-sm text-slate-500 mt-2 max-w-xs">Create a new group, invite members, and track savings.</p>
             </button>
         </div>
 
-        {/* Create Modal */}
         <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Start New Stokvel">
             <div className="space-y-6 pt-2">
-                 {/* Branding Preview */}
                  <div className="flex justify-center mb-6">
                     <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl font-bold text-white shadow-lg transition-colors" style={{ backgroundColor: formData.primaryColor || globalSettings.primaryColor }}>
                         {(formData.name || 'S').charAt(0).toUpperCase()}
@@ -279,7 +278,7 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                         <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Currency</label>
                         <select 
                             className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
-                            value={formData.currencySymbol || 'ZAR'} // Default ZAR
+                            value={formData.currencySymbol || 'ZAR'} 
                             onChange={e => setFormData({...formData, currencySymbol: e.target.value})}
                         >
                             <option value="ZAR">ZAR (Rand)</option>
@@ -302,8 +301,6 @@ export const Stokvels: React.FC<StokvelsProps> = ({ onOpenModule }) => {
                                 {formData.primaryColor === color && <CheckCircle2 size={16} className="text-white" />}
                             </button>
                         ))}
-                        {/* Custom color picker */}
-                        <input type="color" value={formData.primaryColor || '#6366f1'} onChange={e => setFormData({...formData, primaryColor: e.target.value})} className="w-10 h-10 p-0 border-0 rounded-full overflow-hidden" />
                     </div>
                 </div>
 
